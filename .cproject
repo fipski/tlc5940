@@ -24,7 +24,11 @@
 							<tool id="cdt.managedbuild.tool.gnu.cross.c.compiler.1458442572" name="Cross GCC Compiler" superClass="cdt.managedbuild.tool.gnu.cross.c.compiler">
 								<option id="gnu.c.compiler.option.include.paths.2141234176" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="/home/andrei/src/work/BeagleBoneBlack/Kernel/ti-linux-kernel/include"/>
+									<listOptionValue builtIn="false" value="/home/andrei/src/work/BeagleBoneBlack/Kernel/ti-linux-kernel/include/uapi"/>
 									<listOptionValue builtIn="false" value="/home/andrei/src/work/BeagleBoneBlack/Kernel/ti-linux-kernel/arch/arm/include"/>
+									<listOptionValue builtIn="false" value="/home/andrei/src/work/BeagleBoneBlack/Kernel/ti-linux-kernel/arch/arm/include/generated"/>
+									<listOptionValue builtIn="false" value="/home/andrei/src/work/BeagleBoneBlack/Kernel/ti-linux-kernel/arch/arm/include/uapi"/>
+									<listOptionValue builtIn="false" value="/opt/gcc-linaro-4.9-2014.11-x86_64_arm-linux-gnueabihf/lib/gcc/arm-linux-gnueabihf/4.9.3/include"/>
 								</option>
 								<option id="gnu.c.compiler.option.preprocessor.def.symbols.1190051832" name="Defined symbols (-D)" superClass="gnu.c.compiler.option.preprocessor.def.symbols" useByScannerDiscovery="false" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="__KERNEL__=1"/>
