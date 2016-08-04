@@ -1,4 +1,4 @@
-obj-m += lt8500.o
+obj-m += tlc5940.o
 
 export ARCH=arm
 export CROSS_COMPILE=/opt/gcc-linaro-4.9-2014.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
