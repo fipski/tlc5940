@@ -1,0 +1,25 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+        compatible = "ti,beaglebone", "ti,beaglebone-black";
+        part-number = "BB-TLC5940-01";
+
+        fragment@0 {
+              target = <&spi1>;
+                __overlay__ {
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                        status    = "okay";
+                        pinctrl-names   = "default";
+
+                        tlc5940@0 {
+                                compatible = "ti,tlc5940";
+								chain-sz = <16>;
+                                reg = <0>; /* cs0 */
+                                mode=<0>;
+                                spi-max-frequency=<30000000>;
+                        };
+                };
+        };
+};
