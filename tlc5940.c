@@ -34,7 +34,7 @@ typedef struct {
 
 struct tlc5940_dev {
 	struct spi_device	*spi;			// SPI Device handler
-	__u16				chain_sz;		// Number of devices in the chain
+	__u32				chain_sz;		// Number of devices in the chain
 	int					ldi_blank_gpio;	// LDI/Blank GPIO pin
 };
 
@@ -121,7 +121,7 @@ static int tlc5940_probe(struct spi_device *spi)
 {
 	struct device_node *np = spi->dev.of_node;
 	struct tlc5940_dev *ltdev;
-	__u16 count;
+	__u32 count;
 	int ret = 0;
 
 	if (!np) {
@@ -137,7 +137,7 @@ static int tlc5940_probe(struct spi_device *spi)
 	 * Get the number of
 	 */
 	if (of_match_device(of_match_ptr(tlc5940_of_match), &spi->dev)) {
-		if (!of_property_read_u16(np, OF_MAX_CHAIN_SZ, &count)) {
+		if (!of_property_read_u32(np, OF_MAX_CHAIN_SZ, &count)) {
 			ltdev->chain_sz = count;
 			printk(KERN_INFO "%s = %d", OF_MAX_CHAIN_SZ, ltdev->chain_sz);
 		}
