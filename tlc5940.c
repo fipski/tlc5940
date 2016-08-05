@@ -153,8 +153,8 @@ static int tlc5940_probe(struct spi_device *spi)
 		}
 	}
 
-	// Set the direction of XLAT pin
-	ret = gpio_direction_output(tlcdev->xlat_gpio, 1);
+	// Set the direction of XLAT pin as OUT, set it low by-default
+	ret = gpio_direction_output(tlcdev->xlat_gpio, 0);
 	if (ret) {
 		dev_err(&tlcdev->spi->dev, "Failed to configure XLAT pin for output: %d\n", ret);
 
