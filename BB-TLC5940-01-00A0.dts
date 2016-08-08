@@ -1,47 +1,78 @@
+/*
+ * Copyright (C) 2013 CircuitCo
+ *
+ * Virtual cape for SPI0 on connector pins P9.22 P9.21 P9.18 P9.17
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 /dts-v1/;
 /plugin/;
 
 / {
-        compatible = "ti,beaglebone", "ti,beaglebone-black";
-        part-number = "BB-TLC5940-01";
+	compatible = "ti,beaglebone", "ti,beaglebone-black", "ti,beaglebone-green";
 
-		/* state the resources this cape uses */
-		exclusive-use =
-				/* the pin header uses */
-				"P9.25",	/* spi latch: gpio3_21 */
-				/* the hardware IP uses */
-				"gpio3_21",
-				"spi1";
+	/* identification */
+	part-number = "BB-TLC5940-01";
+	version = "00A0";
 
-		fragment@0 {
-				target = <&am33xx_pinmux>;
-				__overlay__ {
-						bone_tlc5940_spi1_pins: pinmux_bone_tl5940_spi1_pins {
-								pinctrl-single,pins = <
-										0x1ac 0x37	/* mcasp0_ahclkx.gpio3_21, RX_ENABLED | PULLUP | MODE7 */
-								>;
-						};
-				};
+	/* state the resources this cape uses */
+	exclusive-use =
+		/* the pin header uses */
+		"P9.17",	/* spi0_cs0 */
+		"P9.18",	/* spi0_d1 */
+		"P9.21",	/* spi0_d0 */
+		"P9.22",	/* spi0_sclk */
+		"P9.25",	/* xlat */
+		/* the hardware ip uses */
+		"gpio3_21",
+		"spi0";
+
+	fragment@0 {
+		target = <&am33xx_pinmux>;
+		__overlay__ {
+			/* default state has all gpios released and mode set to uart1 */
+			bb_spi0_pins: pinmux_bb_spi0_pins {
+				pinctrl-single,pins = <
+					0x150 0x30	/* spi0_sclk.spi0_sclk,		INPUT_PULLUP | MODE0 */
+					0x154 0x30	/* spi0_d0.spi0_d0,		INPUT_PULLUP | MODE0 */
+					0x158 0x10	/* spi0_d1.spi0_d1,		OUTPUT_PULLUP | MODE0 */
+					0x15c 0x10	/* spi0_cs0.spi0_cs0,		OUTPUT_PULLUP | MODE0 */
+				>;
+			};
+			bb_latch_pins: pinmux_bb_latch_pins {
+				pinctrl-single,pins = <
+					0x1ac 0x37	/* mcaso0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
+				>;
+			};
 		};
+	};
 
-        fragment@1 {
-              target = <&spi1>;
-                __overlay__ {
-                        #address-cells = <1>;
-                        #size-cells = <0>;
-                        status    = "okay";
-                        pinctrl-names   = "default";
+	fragment@1 {
+		target = <&spi0>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
 
-                        tlc5940@0 {
-                                compatible = "ti,tlc5940";
-                                pinctrl-names = "tlc5940-xlat";
-                                pinctrl-0 = <&bone_tlc5940_spi1_pins>;
-								chain-sz = <16>;
-								gpio-xlat = <&gpio3 21 1>;
-                                reg = <0>; /* cs0 */
-                                mode=<0>;
-                                spi-max-frequency=<25000000>;
-                        };
-                };
-        };
+			status = "okay";
+			pinctrl-names = "default";
+			pinctrl-0 = <&bb_spi0_pins>;
+			ti,pio-mode; /* disable dma when used as an overlay, dma gets stuck at 160 bits... */
+
+			tlc5940@0 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				compatible = "ti,tlc5940";
+				pinctrl-names = "tlc5940-xlat";
+				pinctrl-0 = <&bb_latch_pins>;
+				chain-sz-max = <16>;
+				gpio-xlat = <&gpio3 21 1>;
+				reg = <0>;
+				spi-max-frequency = <16000000>;
+				spi-cpha;
+			};
+		};
+	};
 };
