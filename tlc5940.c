@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-
+#define DEBUG
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -41,20 +41,21 @@
 #define TLC5940_DEV_MAX_LEDS			16			// Maximum number of leds per device
 #define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
+#define TLC5940_LED_NAME_SZ				16
 
 struct tlc5940_led {
 	struct led_classdev	ldev;
 	struct tlc5940_dev	*tlc;
 	int					id;
 	int					brightness;
-	char				*name;
+	char				name[TLC5940_LED_NAME_SZ];
 
 	spinlock_t			lock;
 };
 
 struct tlc5940_dev {
 	struct tlc5940_led	leds[TLC5940_DEV_MAX_LEDS];	// Number of available leds per device
-	struct tlc5940_dev	*parent;
+	struct tlc5940_dev	*next;
 	struct spi_device	*spi;			// SPI Device handler
 
 	struct mutex		mlock;
@@ -66,7 +67,20 @@ struct tlc5940_dev {
 	bool				new_gs_data;	// New grayscale data
 };
 
-#define DEBUG
+static void tlc5940_set_brightness(struct led_classdev *ldev,
+		const enum led_brightness brightness)
+{
+	struct tlc5940_led *led = container_of(ldev, struct tlc5940_led, ldev);
+
+	led->tlc->new_gs_data = 1;
+
+	spin_lock(&led->lock);
+	{
+		led->brightness = brightness;
+	}
+	spin_unlock(&led->lock);
+}
+
 static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 		int max_sz)
 {
@@ -181,10 +195,12 @@ MODULE_DEVICE_TABLE(of, tlc5940_of_match);
 static int tlc5940_probe(struct spi_device *spi)
 {
 	struct device_node *np = spi->dev.of_node;
+	struct device *dev = &spi->dev;
 	struct tlc5940_dev *tlcdev;
+	struct tlc5940_led *leddev;
 	int count = 0;
 	int latch = -EINVAL;
-	//int i = 0;
+	int i = 0;
 	int ret = 0;
 
 	if (!np) {
@@ -268,7 +284,26 @@ static int tlc5940_probe(struct spi_device *spi)
 	tlcdev->spi = spi;
 	tlcdev->new_gs_data = 1;
 
-	// TODO: allocate memory for led_array structure
+	// TODO: allocate memory for all led devices/leds
+
+	for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
+		leddev = &tlcdev->leds[i];
+		sprintf(leddev->name, "led%u-%u", 0, i);
+		leddev->id = i;
+		leddev->tlc = tlcdev;
+		leddev->brightness = LED_OFF;
+		spin_lock_init(&leddev->lock);
+		leddev->ldev.name = leddev->name;
+		leddev->ldev.brightness = LED_OFF;
+		leddev->ldev.max_brightness = 0xfff;
+		leddev->ldev.brightness_set = tlc5940_set_brightness;
+		ret = devm_led_classdev_register(dev, &leddev->ldev);
+		if (ret < 0) {
+			dev_err(&tlcdev->spi->dev, "unable to register SPI led device %s",
+					leddev->name);
+			return ret;
+		}
+	}
 
 	spi_set_drvdata(spi, tlcdev);
 	dev_info(&tlcdev->spi->dev, "TI tlc5940 SPI driver registered");
@@ -278,11 +313,19 @@ static int tlc5940_probe(struct spi_device *spi)
 
 static int tlc5940_remove(struct spi_device *spi)
 {
-	int ret = 0;
+	struct tlc5940_dev *ldev = spi_get_drvdata(spi);
+	struct tlc5940_led *led;
+	int i = 0;
 
-	dev_info(&spi->dev, "driver removed");
+	// TODO: must remove all leds from all devices from sysfs
+	for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
+		led = &ldev->leds[i];
+		devm_led_classdev_unregister(&ldev->spi->dev, &led->ldev);
+	}
 
-	return ret;
+	dev_info(&ldev->spi->dev, "driver removed");
+
+	return 0;
 }
 
 static const struct spi_device_id tlc5940_id[] = {
