@@ -45,7 +45,6 @@
 
 struct tlc5940_led {
 	struct led_classdev	ldev;
-	struct tlc5940_dev	*tlc;
 	int					id;
 	int					brightness;
 	char				name[TLC5940_LED_NAME_SZ];
@@ -54,17 +53,15 @@ struct tlc5940_led {
 };
 
 struct tlc5940_dev {
-	struct tlc5940_led	leds[TLC5940_DEV_MAX_LEDS];	// Number of available leds per device
-	struct tlc5940_dev	*next;
-	struct spi_device	*spi;			// SPI Device handler
+	struct tlc5940_led leds[TLC5940_DEV_MAX_LEDS];		// Number of available leds per device
+	struct spi_device	*spi;							// SPI Device handler
 
 	struct mutex		mlock;
 	struct work_struct	work;
 
-	int 				bank_id;		// Device's number
-	int					chain_sz;		// Number of devices in the chain
-	int					xlat_gpio;		// Latch
-	bool				new_gs_data;	// New grayscale data
+	int 				bank_id;						// Device's number
+	int					chain_sz;						// Number of devices in the chain
+	int					xlat_gpio;						// Latch
 };
 
 static void tlc5940_set_brightness(struct led_classdev *ldev,
@@ -72,13 +69,12 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
 {
 	struct tlc5940_led *led = container_of(ldev, struct tlc5940_led, ldev);
 
-	led->tlc->new_gs_data = 1;
-
 	spin_lock(&led->lock);
-	{
-		led->brightness = brightness;
-	}
+
+	led->brightness = brightness;
+
 	spin_unlock(&led->lock);
+
 }
 
 static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
@@ -208,7 +204,7 @@ static int tlc5940_probe(struct spi_device *spi)
 		return -ENODEV;
 	}
 
-	tlcdev = devm_kzalloc(&spi->dev, sizeof(struct tlc5940_dev), GFP_KERNEL);
+	tlcdev = devm_kzalloc(dev, sizeof(struct tlc5940_dev), GFP_KERNEL);
 	if (!tlcdev)
 		return -ENOMEM;
 
@@ -219,7 +215,7 @@ static int tlc5940_probe(struct spi_device *spi)
 
 	// Set SPI master device transfer rate
 	if (spi->max_speed_hz > TLC5940_SPI_MAX_SPEED) {
-		dev_warn(&tlcdev->spi->dev, "spi max speed (%u) is too high, "
+		dev_warn(dev, "spi max speed (%u) is too high, "
 				"setting to default %u", tlcdev->spi->max_speed_hz,
 				TLC5940_SPI_MAX_SPEED);
 		spi->max_speed_hz = TLC5940_SPI_MAX_SPEED;
@@ -229,16 +225,16 @@ static int tlc5940_probe(struct spi_device *spi)
 	 * Get the number of connected device from the device tree structure
 	 * and then scan and compare to actual number of connected devices.
 	 */
-	if (of_match_device(of_match_ptr(tlc5940_of_match), &spi->dev)) {
+	if (of_match_device(of_match_ptr(tlc5940_of_match), dev)) {
 		if (!of_property_read_u32(np, OF_MAX_CHAIN_SZ, &count)) {
 			tlcdev->chain_sz = tlc5940_discover(tlcdev, spi, count);
 			if (!tlcdev->chain_sz) {
 				// Device is not connected at all
-				dev_err(&spi->dev, "%u device(s) found",
+				dev_err(dev, "%u device(s) found",
 						tlcdev->chain_sz);
 				return -ENODEV;
 			} else {
-				dev_info(&spi->dev, "found %u device(s)",
+				dev_info(dev, "found %u device(s)",
 						tlcdev->chain_sz);
 			}
 		}
@@ -246,27 +242,27 @@ static int tlc5940_probe(struct spi_device *spi)
 		count = tlc5940_discover(tlcdev, spi, TLC5940_DEF_MAX_CHAIN_SZ);
 		if (count > 0) {
 			tlcdev->chain_sz = count;
-			dev_info(&spi->dev, "found %u device(s) in a chain",
+			dev_info(dev, "found %u device(s) in a chain",
 					tlcdev->chain_sz);
 		} else {
 			// Device is not connected at all
-			dev_err(&spi->dev, "%u device(s) found", count);
+			dev_err(dev, "%u device(s) found", count);
 			return -ENODEV;
 		}
 	}
 
 	// Get XLAT pin
-	if (of_match_device(of_match_ptr(tlc5940_of_match), &spi->dev)) {
+	if (of_match_device(of_match_ptr(tlc5940_of_match), dev)) {
 		latch = of_get_named_gpio(np, OF_XLAT_BLANK, 0);
 		if (gpio_is_valid(latch)) {
-			if (devm_gpio_request(&spi->dev, latch, OF_XLAT_BLANK)) {
-				dev_err(&spi->dev, "unable to request gpio "
+			if (devm_gpio_request(dev, latch, OF_XLAT_BLANK)) {
+				dev_err(dev, "unable to request gpio "
 						"for XLAT pin");
 				return -EINVAL;
 			}
 			tlcdev->xlat_gpio = latch;
 		} else {
-			dev_err(&spi->dev, "specified gpio pin for XLAT "
+			dev_err(dev, "specified gpio pin for XLAT "
 					"is invalid");
 			return -EINVAL;
 		}
@@ -275,55 +271,60 @@ static int tlc5940_probe(struct spi_device *spi)
 	// Set the direction of XLAT pin as OUT, set it low by-default
 	ret = gpio_direction_output(tlcdev->xlat_gpio, 0);
 	if (ret) {
-		dev_err(&tlcdev->spi->dev, "Failed to configure XLAT pin for "
+		dev_err(dev, "Failed to configure XLAT pin for "
 				"output: %d\n", ret);
 
-		return ret;
+		return -EINVAL;
 	}
 
 	tlcdev->spi = spi;
-	tlcdev->new_gs_data = 1;
 
 	// TODO: allocate memory for all led devices/leds
-
+	// TODO: enumerate banks according to device count
+	tlcdev->bank_id = 0;
 	for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
 		leddev = &tlcdev->leds[i];
-		sprintf(leddev->name, "led%u-%u", 0, i);
 		leddev->id = i;
-		leddev->tlc = tlcdev;
+
+		memset(leddev->name, 0, TLC5940_LED_NAME_SZ);
+		sprintf(leddev->name, "led%u-%u", tlcdev->bank_id, leddev->id);
+
 		leddev->brightness = LED_OFF;
-		spin_lock_init(&leddev->lock);
 		leddev->ldev.name = leddev->name;
 		leddev->ldev.brightness = LED_OFF;
 		leddev->ldev.max_brightness = 0xfff;
+		spin_lock_init(&leddev->lock);
 		leddev->ldev.brightness_set = tlc5940_set_brightness;
+
 		ret = devm_led_classdev_register(dev, &leddev->ldev);
 		if (ret < 0) {
-			dev_err(&tlcdev->spi->dev, "unable to register SPI led device %s",
+			dev_err(dev, "unable to register SPI led device %s",
 					leddev->name);
+
 			return ret;
 		}
 	}
 
 	spi_set_drvdata(spi, tlcdev);
-	dev_info(&tlcdev->spi->dev, "TI tlc5940 SPI driver registered");
+	dev_info(dev, "TI tlc5940 SPI driver registered");
 
 	return ret;
 }
 
 static int tlc5940_remove(struct spi_device *spi)
 {
-	struct tlc5940_dev *ldev = spi_get_drvdata(spi);
+	struct tlc5940_dev *tlc = spi_get_drvdata(spi);
+	struct device *dev = &tlc->spi->dev;
 	struct tlc5940_led *led;
 	int i = 0;
 
 	// TODO: must remove all leds from all devices from sysfs
 	for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
-		led = &ldev->leds[i];
-		devm_led_classdev_unregister(&ldev->spi->dev, &led->ldev);
+		led = &tlc->leds[i];
+		devm_led_classdev_unregister(dev, &led->ldev);
 	}
 
-	dev_info(&ldev->spi->dev, "driver removed");
+	dev_info(dev, "driver removed");
 
 	return 0;
 }
