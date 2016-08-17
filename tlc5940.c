@@ -19,6 +19,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
+#include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
@@ -55,6 +56,7 @@ struct tlc5940_led {
 struct tlc5940_dev {
 	struct tlc5940_led leds[TLC5940_DEV_MAX_LEDS];		// Number of available leds per device
 	struct spi_device	*spi;							// SPI Device handler
+	struct list_head	list;
 
 	struct mutex		mlock;
 	struct work_struct	work;
@@ -68,10 +70,16 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
 		const enum led_brightness brightness)
 {
 	struct tlc5940_led *led = container_of(ldev, struct tlc5940_led, ldev);
+#ifdef DEBUG
+	struct device *dev = led->ldev.dev;
+#endif /* DEBUG */
 
 	spin_lock(&led->lock);
 
 	led->brightness = brightness;
+#ifdef DEBUG
+	dev_info(dev, "%s: brightness = %u\n", led->name, led->brightness);
+#endif /* DEBUG */
 
 	spin_unlock(&led->lock);
 
@@ -193,6 +201,7 @@ static int tlc5940_probe(struct spi_device *spi)
 	struct device_node *np = spi->dev.of_node;
 	struct device *dev = &spi->dev;
 	struct tlc5940_dev *tlcdev;
+	struct tlc5940_dev *item;
 	struct tlc5940_led *leddev;
 	int count = 0;
 	int latch = -EINVAL;
@@ -278,10 +287,8 @@ static int tlc5940_probe(struct spi_device *spi)
 	}
 
 	tlcdev->spi = spi;
-
-	// TODO: allocate memory for all led devices/leds
-	// TODO: enumerate banks according to device count
 	tlcdev->bank_id = 0;
+
 	for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
 		leddev = &tlcdev->leds[i];
 		leddev->id = i;
@@ -302,6 +309,47 @@ static int tlc5940_probe(struct spi_device *spi)
 					leddev->name);
 
 			return ret;
+		}
+	}
+
+	if (tlcdev->chain_sz > 1) {
+		INIT_LIST_HEAD(&tlcdev->list);
+
+		for (count = 1; count < tlcdev->chain_sz; count++) {
+			item = devm_kzalloc(dev, sizeof(struct tlc5940_dev), GFP_KERNEL);
+			if (!item)
+				return -ENOMEM;
+
+			item->bank_id = count;
+			item->chain_sz = tlcdev->chain_sz;
+			item->mlock = tlcdev->mlock;
+			item->spi = tlcdev->spi;
+			item->work = tlcdev->work;
+			item->xlat_gpio = tlcdev->xlat_gpio;
+
+			for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
+				leddev = &item->leds[i];
+				leddev->id = i;
+
+				memset(leddev->name, 0, TLC5940_LED_NAME_SZ);
+				sprintf(leddev->name, "led%u-%u", item->bank_id, leddev->id);
+
+				leddev->brightness = LED_OFF;
+				leddev->ldev.name = leddev->name;
+				leddev->ldev.brightness = LED_OFF;
+				leddev->ldev.max_brightness = 0xfff;
+				spin_lock_init(&leddev->lock);
+				leddev->ldev.brightness_set = tlc5940_set_brightness;
+
+				ret = devm_led_classdev_register(dev, &leddev->ldev);
+				if (ret < 0) {
+					dev_err(dev, "unable to register SPI led device %s",
+							leddev->name);
+
+					return ret;
+				}
+			}
+			list_add(&item->list, &tlcdev->list);
 		}
 	}
 
