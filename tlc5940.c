@@ -78,7 +78,7 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
 
 	led->brightness = brightness;
 #ifdef DEBUG
-	dev_info(dev, "%s: brightness = %u\n", led->name, led->brightness);
+	dev_info(dev, "brightness = %u\n", led->brightness);
 #endif /* DEBUG */
 
 	spin_unlock(&led->lock);
@@ -162,7 +162,7 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 		// Compare buffers
 		if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE) && (i == 0)) {
 			// TODO: DEBUG ONLY
-			ret = 1;
+			ret = 6;
 			//ret = 0;
 			// Looks like it's a close loop -> no devices connected
 			dev_warn(&spi->dev, "close loop detected");
@@ -364,12 +364,24 @@ static int tlc5940_remove(struct spi_device *spi)
 	struct tlc5940_dev *tlc = spi_get_drvdata(spi);
 	struct device *dev = &tlc->spi->dev;
 	struct tlc5940_led *led;
+	struct tlc5940_dev *next_node;
+	struct tlc5940_dev *cur_node;
 	int i = 0;
 
-	// TODO: must remove all leds from all devices from sysfs
-	for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
-		led = &tlc->leds[i];
-		devm_led_classdev_unregister(dev, &led->ldev);
+	if (tlc->chain_sz > 1) {
+		list_for_each_entry_safe(cur_node, next_node, &tlc->list, list) {
+			for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
+				led = &cur_node->leds[i];
+				devm_led_classdev_unregister(dev, &led->ldev);
+			}
+			list_del(&cur_node->list);
+			devm_kfree(dev, cur_node);
+		}
+	} else {
+		for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
+			led = &tlc->leds[i];
+			devm_led_classdev_unregister(dev, &led->ldev);
+		}
 	}
 
 	dev_info(dev, "driver removed");
