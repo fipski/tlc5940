@@ -43,7 +43,8 @@
 			};
 			bb_latch_pins: pinmux_bb_latch_pins {
 				pinctrl-single,pins = <
-					0x1ac 0x37	/* mcaso0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
+					0x1ac 0x37	/* mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
+					0x1a4 0x37	/* mcasp0_fsr.gpio3_19		RX_ENABLED | PULLUP | MODE7 */
 				>;
 			};
 		};
@@ -69,6 +70,7 @@
 				pinctrl-0 = <&bb_latch_pins>;
 				chain-sz-max = <16>;
 				gpio-xlat = <&gpio3 21 1>;
+				gpio-blank = <&gpio3 19 1>;
 				reg = <0>;
 				spi-max-frequency = <30000000>;
 				spi-cpha;
