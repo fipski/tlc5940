@@ -34,7 +34,8 @@
 
 #define DRIVER_NAME						"tlc5940"
 #define OF_MAX_CHAIN_SZ					"chain-sz-max"	// Number of connected devices from the device tree
-#define OF_XLAT_BLANK					"gpio-xlat"		// Latch for loading the data into the output register
+#define OF_XLAT_GPIO					"gpio-xlat"		// Latch for loading the data into the output register
+#define OF_BLANK_GPIO					"gpio-blank"	// Blank for turning on/off all leds
 
 #define TLC5940_DEF_MAX_CHAIN_SZ		4096		// Used to limit the number of loop cycles when performing the discovery (default if not set by the DT)
 #define TLC5940_SPI_MAX_SPEED			30000000	// Maximum possible SPI speed for the device
@@ -67,6 +68,7 @@ struct tlc5940_dev {
 	int 				bank_id;						// Device's number
 	int					chain_sz;						// Number of devices in the chain
 	int					xlat_gpio;						// Latch
+	int					blank_gpio;						// Blank
 	bool				new_data;
 };
 
@@ -296,7 +298,7 @@ static int tlc5940_probe(struct spi_device *spi)
 	struct tlc5940_dev *item;
 	struct tlc5940_led *leddev;
 	int count = 0;
-	int latch = -EINVAL;
+	int gpio = -EINVAL;
 	int i = 0;
 	int ret = 0;
 
@@ -354,16 +356,33 @@ static int tlc5940_probe(struct spi_device *spi)
 
 	// Get XLAT pin
 	if (of_match_device(of_match_ptr(tlc5940_of_match), dev)) {
-		latch = of_get_named_gpio(np, OF_XLAT_BLANK, 0);
-		if (gpio_is_valid(latch)) {
-			if (devm_gpio_request(dev, latch, OF_XLAT_BLANK)) {
+		gpio = of_get_named_gpio(np, OF_XLAT_GPIO, 0);
+		if (gpio_is_valid(gpio)) {
+			if (devm_gpio_request(dev, gpio, OF_XLAT_GPIO)) {
 				dev_err(dev, "unable to request gpio "
 						"for XLAT pin");
 				return -EINVAL;
 			}
-			tlcdev->xlat_gpio = latch;
+			tlcdev->xlat_gpio = gpio;
 		} else {
 			dev_err(dev, "specified gpio pin for XLAT "
+					"is invalid");
+			return -EINVAL;
+		}
+	}
+
+	// Get BLANK pin
+	if (of_match_device(of_match_ptr(tlc5940_of_match), dev)) {
+		gpio = of_get_named_gpio(np, OF_BLANK_GPIO, 0);
+		if (gpio_is_valid(gpio)) {
+			if (devm_gpio_request(dev, gpio, OF_BLANK_GPIO)) {
+				dev_err(dev, "unable to request gpio "
+						"for BLANK pin");
+				return -EINVAL;
+			}
+			tlcdev->blank_gpio = gpio;
+		} else {
+			dev_err(dev, "specified gpio pin for BLANK "
 					"is invalid");
 			return -EINVAL;
 		}
@@ -373,6 +392,15 @@ static int tlc5940_probe(struct spi_device *spi)
 	ret = gpio_direction_output(tlcdev->xlat_gpio, 0);
 	if (ret) {
 		dev_err(dev, "Failed to configure XLAT pin for "
+				"output: %d\n", ret);
+
+		return -EINVAL;
+	}
+
+	// Set the direction of BLANK pin as OUT, set it low by-default
+	ret = gpio_direction_output(tlcdev->blank_gpio, 0);
+	if (ret) {
+		dev_err(dev, "Failed to configure BLANK pin for "
 				"output: %d\n", ret);
 
 		return -EINVAL;
@@ -403,6 +431,7 @@ static int tlc5940_probe(struct spi_device *spi)
 		item->work = tlcdev->work;
 		item->timer = tlcdev->timer;
 		item->xlat_gpio = tlcdev->xlat_gpio;
+		item->blank_gpio = tlcdev->blank_gpio;
 		item->new_data = tlcdev->new_data;
 
 		for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
