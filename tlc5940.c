@@ -43,7 +43,7 @@
 #define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_HRTMR_DEF_DELAY_NS			5000000		// 5ms
+#define TLC5940_HRTMR_DEF_DELAY_NS		5000000		// 5ms
 
 struct tlc5940_led {
 	struct tlc5940_dev	*tlc;
@@ -91,18 +91,75 @@ static void tlc5940_work(struct work_struct *work)
 	struct device *dev = &spi->dev;
 	struct tlc5940_dev *cur_item;
 	struct tlc5940_dev *next_item;
-	struct tlc5940_led *led;
+	struct spi_transfer tx;
+	struct spi_message msg;
+	__u8 *message_tx;
+	__u8 *message_rx;
+	int led_br_cur = 0;
+	int led_br_next = 0;
+	int ret = 0;
 	int i = 0;
 
-	list_for_each_entry_safe_reverse(cur_item, next_item, &tlc->list, list) {
-		for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
-			// TODO: prepare a packet for each device and send it to spi bus
-			led = &cur_item->leds[i];
-			dev_info(dev, "%s: brightness = %u\n", led->name, led->brightness);
-		}
+	message_tx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
+	message_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
+
+	memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
+	memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
+	memset(&tx, 0x00, sizeof(tx));
+	spi_message_init(&msg);
+	tx.rx_buf = message_rx;
+	tx.tx_buf = message_tx;
+	tx.len = TLC5940_FRAME_SIZE * 2;
+	spi_message_add_tail(&tx, &msg);
+
+	if (mutex_lock_interruptible(&tlc->mlock)) {
+		dev_err(dev, "unable to set lock");
+		return;
 	}
 
+	list_for_each_entry_safe_reverse(cur_item, next_item, &tlc->list, list) {
+		memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
+		memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
+
+		for (i = 0; i < (TLC5940_DEV_MAX_LEDS >> 1); i++) {
+			led_br_cur = cur_item->leds[i * 2].brightness;
+			led_br_next = cur_item->leds[i * 2 + 1].brightness;
+
+			message_tx[3 * i + 0] = (led_br_cur >> 4) & 0xff;
+			message_tx[3 * i + 1] =
+					((led_br_cur & 0x0f) << 4) + ((led_br_next >> 8) & 0x0f);
+			message_tx[3 * i + 2] = led_br_next & 0xff;
+		}
+
+		ret = spi_sync(spi, &msg);
+		if (ret) {
+			dev_err(dev, "spi sync error");
+			break;
+		}
+
+#ifdef DEBUG
+		printk("\ntx->");
+		for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
+			printk("0x%02x ", message_tx[ret]);
+		}
+
+		printk("\nrx->");
+		for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
+			printk("0x%02x ", message_rx[ret]);
+		}
+#endif /* DEBUG */
+	}
+
+	gpio_set_value(tlc->xlat_gpio, 1);
+	// TODO: add delay
+	gpio_set_value(tlc->xlat_gpio, 0);
+
 	tlc->new_data = 0;
+
+	kfree(message_tx);
+	kfree(message_rx);
+
+	mutex_unlock(&tlc->mlock);
 }
 
 static void tlc5940_set_brightness(struct led_classdev *ldev,
