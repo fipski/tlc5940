@@ -43,6 +43,7 @@
 #define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
 #define TLC5940_LED_NAME_SZ				16
+#define TLC5940_HRTMR_DEF_DELAY_NS			5000000		// 5ms
 
 struct tlc5940_led {
 	struct tlc5940_dev	*tlc;
@@ -60,6 +61,7 @@ struct tlc5940_dev {
 	struct list_head	list;
 
 	struct mutex		mlock;
+	struct hrtimer		timer;
 	struct work_struct	work;
 
 	int 				bank_id;						// Device's number
@@ -67,6 +69,20 @@ struct tlc5940_dev {
 	int					xlat_gpio;						// Latch
 	bool				new_data;
 };
+
+static unsigned long hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS;
+
+static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
+{
+	struct tlc5940_dev *tlc = container_of(timer, struct tlc5940_dev, timer);
+
+	if (tlc->new_data)
+		schedule_work(&tlc->work);
+
+	hrtimer_forward_now(timer, ktime_set(0, hrtimer_delay));
+
+	return HRTIMER_RESTART;
+}
 
 static void tlc5940_work(struct work_struct *work)
 {
@@ -218,6 +234,7 @@ static int tlc5940_probe(struct spi_device *spi)
 	struct device_node *np = spi->dev.of_node;
 	struct device *dev = &spi->dev;
 	struct work_struct *work;
+	struct hrtimer *timer;
 	struct tlc5940_dev *tlcdev;
 	struct tlc5940_dev *item;
 	struct tlc5940_led *leddev;
@@ -308,7 +325,12 @@ static int tlc5940_probe(struct spi_device *spi)
 	tlcdev->bank_id = 0;
 	tlcdev->new_data = 0;
 	work = &tlcdev->work;
+	timer = &tlcdev->timer;
+
 	INIT_WORK(work, tlc5940_work);
+
+	hrtimer_init(timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	timer->function = tlc5940_timer;
 
 	INIT_LIST_HEAD(&tlcdev->list);
 
@@ -322,6 +344,7 @@ static int tlc5940_probe(struct spi_device *spi)
 		item->mlock = tlcdev->mlock;
 		item->spi = tlcdev->spi;
 		item->work = tlcdev->work;
+		item->timer = tlcdev->timer;
 		item->xlat_gpio = tlcdev->xlat_gpio;
 		item->new_data = tlcdev->new_data;
 
@@ -352,6 +375,9 @@ static int tlc5940_probe(struct spi_device *spi)
 	}
 
 	spi_set_drvdata(spi, tlcdev);
+	hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS * tlcdev->chain_sz;
+	hrtimer_start(timer, ktime_set(1, 0), HRTIMER_MODE_REL);
+
 	dev_info(dev, "TI tlc5940 SPI driver registered");
 
 	return ret;
@@ -362,11 +388,13 @@ static int tlc5940_remove(struct spi_device *spi)
 	struct tlc5940_dev *tlc = spi_get_drvdata(spi);
 	struct device *dev = &tlc->spi->dev;
 	struct work_struct *work = &tlc->work;
+	struct hrtimer *timer = &tlc->timer;
 	struct tlc5940_led *led;
 	struct tlc5940_dev *next_node;
 	struct tlc5940_dev *cur_node;
 	int i = 0;
 
+	hrtimer_cancel(timer);
 	cancel_work_sync(work);
 
 	list_for_each_entry_safe(cur_node, next_node, &tlc->list, list) {
