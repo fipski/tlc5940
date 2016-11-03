@@ -58,7 +58,7 @@
 #define TLC5940_SPI_BITS_PER_WORD		8	   // Word width
 #define TLC5940_DEVICES                 1      // Deactivate auto detect
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_LEDS                    (10*48)
+#define TLC5940_LEDS                    (2*48)
 #define TLC5940_FRAME_SIZE	    	  	(TLC5940_LEDS * 3 / 2)	//24 per chip (12b*16)/8b
 #define TLC5940_RESOLUTION              1024  // Number of PWM Greyscales, max 4096
 #define TLC5940_GSCLK_PERIOD_NS         (50)  // 20 MHz GSCLK
