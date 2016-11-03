@@ -88,6 +88,7 @@ bool    new_data;
 bool    latching;
 struct  kobject *kobj_ref;
 u8 framebuffer_tx[TLC5940_FRAME_SIZE];
+static atomic_t atomic;
 
 struct tlc5940_led {
     struct tlc5940_dev	*tlc;
@@ -143,7 +144,18 @@ static struct file_operations fops = {
  */
 static int dev_open(struct inode *inode, struct file *fp)
 {
+    int old;
+    old = atomic_cmpxchg(&atomic, 0, 1);
+    if (old == 0) {
+        printk("Succes: first open\n");
+
+    } else {
+        printk("Failed: already opened\n");
+        return -EBUSY;
+    }
+
     return 0;
+
 }
 
 /* 
@@ -152,6 +164,12 @@ static int dev_open(struct inode *inode, struct file *fp)
  */
 static int dev_release(struct inode *inode, struct file *fp)
 {
+    int old;
+
+    printk("cdev_release\n");
+
+    old = atomic_cmpxchg(&atomic, 1, 0);
+    printk("Release: old = %d\n", old);
     return 0;
 }
 
@@ -161,22 +179,22 @@ static int dev_release(struct inode *inode, struct file *fp)
 static ssize_t dev_read(struct file *fp, char *buf, size_t len, loff_t *off)
 {
     unsigned long rval;
-    size_t copied;
 
-    if (len > (gko_buffer_end - *off))
-        len = gko_buffer_end - *off;
+    if (*off == 0) {
+        rval = copy_to_user(buf, 
+                &framebuffer_tx,
+                TLC5940_FRAME_SIZE);
 
-    rval = copy_to_user(buf, 
-            &framebuffer_tx,
-            TLC5940_FRAME_SIZE);
+        if (rval != 0)
+            return -EFAULT;
 
-    if (rval < 0)
-        return -EFAULT;
+        *off += TLC5940_FRAME_SIZE;
 
-    copied = len - rval;
-    *off += copied;
+        return TLC5940_FRAME_SIZE;
+    } else {
+        return 0;
+    }
 
-    return copied;
 }
 
 /*
@@ -186,34 +204,33 @@ static ssize_t dev_write(struct file *fp, const char *buf, size_t len,
         loff_t *off)
 {
     unsigned long rval;
-    size_t copied;
 
     printk(KERN_DEBUG DEVICE_NAME 
             " dev_write(fp, buf, len = %zu, off = %d )\n", len, (int)*off);
-    if (len > TLC5940_FRAME_SIZE) {
-        printk(KERN_DEBUG DEVICE_NAME " data too long!");
-        return -EFAULT;
-    }
+    /* if (len > TLC5940_FRAME_SIZE) { */
+    /*     printk(KERN_DEBUG DEVICE_NAME " data too long!"); */
+    /*     return -1; */
+    /* } */
 
-    if (len > TLC5940_FRAME_SIZE - *off)
-        len = TLC5940_FRAME_SIZE - *off;
+    /* if (len > TLC5940_FRAME_SIZE) */
+    /*     len = TLC5940_FRAME_SIZE; */
 
-    rval = copy_from_user(&framebuffer_tx + *off, 
+    rval = copy_from_user(&framebuffer_tx, 
             buf,
-            len);
+            TLC5940_FRAME_SIZE);
 
-    if (rval < 0) {
+    if (rval != 0) {
         printk(KERN_DEBUG DEVICE_NAME " copy_from_user() failed\n");
         return -EFAULT;
     }
 
-    copied = len - rval;
-    *off += copied;
+
+    *off += TLC5940_FRAME_SIZE;
     printk(KERN_DEBUG DEVICE_NAME " String read: %s", gko_buffer);
     
     new_data = 1;
 
-    return copied;
+    return TLC5940_FRAME_SIZE;
 }
 
 
