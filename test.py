@@ -3,8 +3,8 @@
 import math
 import time
 
-# ledStart = 47
-ledStart = 0
+ledStart = 47
+# ledStart = 0
 ledEnd = 96
 
 def singleLed():
