@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-/* #define DEBUG */
+#define DEBUG 
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -41,14 +41,14 @@
 #define OF_PWM                          "pwms"
 #define TLC5940_DEF_MAX_CHAIN_SZ		4096    // Used to limit the number of loop
                                                 //cycles when performing the discovery (if not set by the DT)
-#define TLC5940_SPI_MAX_SPEED			30000000	// Maximum possible SPI speed for the device
+#define TLC5940_SPI_MAX_SPEED			30000	// Maximum possible SPI speed for the device
 #define TLC5940_SPI_BITS_PER_WORD		8			// Word width
 #define TLC590_SPI_DELAY                0           // Spi delay in usec
 #define TLC5940_DEV_MAX_LEDS			16			// Maximum number of leds per device
 #define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_GSCLK_SPEED_HZ  (2*1000*4096)
+#define TLC5940_GSCLK_SPEED_HZ  (10000000)
 #define TLC5940_GSCLK_PERIOD_NS (1000000000 / TLC5940_GSCLK_SPEED_HZ)
 #define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 2)
 #define TLC5940_BLANK_PERIOD_NS (4096 * TLC5940_GSCLK_PERIOD_NS *0.98) 
@@ -325,10 +325,10 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 
     mutex_unlock(&dev->mlock);
 #ifdef DEBUG
-    ret = 16;
+    ret = 3;
 #endif
 
-    return 32;
+    return ret;
 }
 
 static const struct of_device_id tlc5940_of_match[] = {
@@ -369,12 +369,12 @@ static int tlc5940_probe(struct spi_device *spi)
     spi->bits_per_word = TLC5940_SPI_BITS_PER_WORD;
 
     // Set SPI master device transfer rate
-    if (spi->max_speed_hz > TLC5940_SPI_MAX_SPEED) {
-        dev_warn(dev, "spi max speed (%u) is too high, "
-                "setting to default %u", tlcdev->spi->max_speed_hz,
-                TLC5940_SPI_MAX_SPEED);
-        spi->max_speed_hz = TLC5940_SPI_MAX_SPEED;
-    }
+    /* if (spi->max_speed_hz > TLC5940_SPI_MAX_SPEED) { */
+    /*     dev_warn(dev, "spi max speed (%u) is too high, " */
+    /*             "setting to default %u", tlcdev->spi->max_speed_hz, */
+    /*             TLC5940_SPI_MAX_SPEED); */
+    /*     spi->max_speed_hz = TLC5940_SPI_MAX_SPEED; */
+    /* } */
 
     /*
      * Get the number of connected device from the device tree structure

@@ -7,3 +7,8 @@ all:
 
 clean:
 	make -C $(KDIR) M=$(PWD) clean
+
+
+devicetree:
+	dtc -O dtb -o BB-TLC5940-01-00A0.dtbo -b 0 -@ BB-TLC5940-01-00A0.dts
+

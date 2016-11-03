@@ -24,18 +24,18 @@
     /* state the resources this cape uses */
     exclusive-use =
         /* the pin header uses */
-        "P9.17",	/* spi0_cs0 */
-        "P9.18",	/* spi0_d1 */
-        "P9.21",	/* spi0_d0 */
-        "P9.22",	/* spi0_sclk */
-        "P9.24",    /* xlat */
-        "P9.27",	/* blank */
-        "P9.28",    /* pwms */
+        "P9.17",	/* spi0_cs0, NC*/
+        "P9.18",	/* spi0_d1, SPI0_D1 */
+        "P9.21",	/* spi0_d0, SPI0_D0 */
+        "P9.22",	/* spi0_sclk, SPI0_SCLK*/
+        "P9.24",    /* blank */
+        "P9.27",	/* xlat */
+        "P9.42",    /* pwms */
         /* the hardware ip uses */
         "gpio0_15",
         "gpio3_19",
         "spi0",
-        "ecap2";
+        "ecap0";
     fragment@0 {
         target = <&am33xx_pinmux>;
         __overlay__ {
@@ -52,49 +52,61 @@ bb_spi0_pins: pinmux_bb_spi0_pins {
               };
 bb_latch_pins: pinmux_bb_latch_pins {
                    pinctrl-single,pins = <
-                       /*	0x1ac 0x37	 P9_25 mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
+                       /*	0x1x0 /* ac 0x37	 P9_25 mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
                        /*	0x1a4 0x37	 P9_27 mcasp0_fsr.gpio3_19		RX_ENABLED | PULLUP | MODE7 */
                        0x184 0x17   /* P9_24 Output Pullup Mode7*/
                        0x1a4 0x17	/* P9_27 Output Pullup Mode7*/
 
                        >;
                };
+ecap0_pins_default: pinmux_ecap0_pins_default {
+                        pinctrl-single,pins = <
+                        0x164 0x10 /* P9_42 Output Pullup Mode0 */
+                        >;
+
+                    };
+ecap0_pins_sleep: pinmux_ecap0_pins_sleep {
+                        pinctrl-single,pins = <
+                        0x164 0x2f /*P9_42 Mode 7 recieve */
+                        >;
+                    };
+
 
 ecap2_pins_default: pinmux_ecap2_pins_default {
                         pinctrl-single,pins = <
-                            0x19c 0x4/* P9_28 mcasp0_ahclkr.ecap2_in_pwm2_out MODE4 */
+                            0x19c 0x4 /* P9_28 mcasp0_ahclkr.ecap2_in_pwm2_out MODE4 */
                             >;
                     };
 
 ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
                       pinctrl-single,pins = <
-                          0x19c 0x2f/* P9_28 mcasp0_ahclkr.ecap2_in_pwm2_out */
+                          0x19c 0x2f /* P9_28 mcasp0_ahclkr.ecap2_in_pwm2_out */
                           >;
                   };
         };
     };
 
 	fragment@1 {
-		target = <&epwmss2>;
+		target = <&epwmss0>;
 		__overlay__ {
 			status = "okay";
 		};
 	};
 
 	fragment@2 {
-		target = <&ehrpwm2>;
+		target = <&ehrpwm0>;
 		__overlay__ {
 			status = "okay";
 		};
 	};
 
     fragment@3 {
-        target = <&ecap2>;
+        target = <&ecap0>;
         __overlay__ {
             status = "okay";
             pinctrl-names = "default", "sleep";
-            pinctrl-0 = <&ecap2_pins_default>;
-            pinctrl-1 = <&ecap2_pins_sleep>;
+            pinctrl-0 = <&ecap0_pins_default>;
+            pinctrl-1 = <&ecap0_pins_sleep>;
         };
     };
 
@@ -110,16 +122,18 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
             /*ti,pio-mode;*/ /* disable dma */
 
             tlc5940@0 {
-#address-cells = <1>;
-#size-cells = <0>;
+
+                /* avoid stupid warning */
+                #address-cells = <1>;
+                #size-cells = <1>;
 
                 compatible = "ti,tlc5940";
                 pinctrl-names = "tlc5940-xlat";
                 pinctrl-0 = <&bb_latch_pins>;
                 chain-sz-max = <128>;
-                gpio-xlat = <&gpio0 15 1>; /* P9_24 */
-                gpio-blank = <&gpio3 19 1>; /* P9_27 */
-                pwms = <&ecap2 0 50000 0>; /* P9_28, name must be pwms */
+                gpio-blank = <&gpio0 15 1>; /* P9_24 */
+                gpio-xlat = <&gpio3 19 1>; /* P9_27 */
+                pwms = <&ecap0 0 50000 0>; /* P9_28, name must be pwms */
                 reg = <0>;
                 spi-max-frequency = <10000000>;
                 spi-cpha=<1>;
