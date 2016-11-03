@@ -78,4 +78,4 @@ while(True):
 #     for i in red:
 #         frame[i] = 100
 #     fbWrite()
-#     time.sleep(0.001)
+#     time.sleep(0.01)
