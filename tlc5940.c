@@ -41,6 +41,7 @@
 #define TLC5940_DEF_MAX_CHAIN_SZ		4096		// Used to limit the number of loop cycles when performing the discovery (default if not set by the DT)
 #define TLC5940_SPI_MAX_SPEED			30000000	// Maximum possible SPI speed for the device
 #define TLC5940_SPI_BITS_PER_WORD		8			// Word width
+#define TLC590_SPI_DELAY                0           // Spi delay in usec
 #define TLC5940_DEV_MAX_LEDS			16			// Maximum number of leds per device
 #define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
@@ -109,14 +110,20 @@ static void tlc5940_work(struct work_struct *work)
 	message_tx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
 	message_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
 
+    // Set delay between words
+    // tx.delay_usecs = TLC590_SPI_DELAY; //not working??
+
 	memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
 	memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
 	memset(&tx, 0x00, sizeof(tx));
 	spi_message_init(&msg);
 	tx.rx_buf = message_rx;
 	tx.tx_buf = message_tx;
-	tx.len = TLC5940_FRAME_SIZE * 2; // (philipp) don't recieve data....
-	spi_message_add_tail(&tx, &msg);
+	tx.len = TLC5940_FRAME_SIZE; //(philipp * 2)
+    
+
+
+    spi_message_add_tail(&tx, &msg);
 
 	if (mutex_lock_interruptible(&tlc->mlock)) {
 		dev_err(dev, "unable to set lock");
@@ -144,14 +151,11 @@ static void tlc5940_work(struct work_struct *work)
 		}
 
 #ifdef DEBUG
-
-	
-        
-		printk("\ntx->");
+		printk("tx->");
 		for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
 			printk(KERN_CONT "0x%02x ", message_tx[ret]);
         }
-		printk("\nrx->");
+		printk("rx->");
         for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
             printk(KERN_CONT "0x%02x ", message_rx[ret]);
         }
@@ -159,10 +163,10 @@ static void tlc5940_work(struct work_struct *work)
     }
 
 #ifdef DEBUG
-    printk(KERN_INFO "xlat_gpio adress is %x \n", tlc->xlat_gpio);
-    printk(KERN_INFO "blank address is %x \n", tlc->blank_gpio);
-    printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
-    printk(KERN_INFO "blank address is %x \n", gpio_get_value(tlc->blank_gpio));
+    printk(KERN_INFO "xlat pin is %x \n", tlc->xlat_gpio);
+    printk(KERN_INFO "blank pin is %x \n", tlc->blank_gpio);
+    printk(KERN_INFO "xlat is %x \n", gpio_get_value(tlc->xlat_gpio));
+    printk(KERN_INFO "blank is %x \n", gpio_get_value(tlc->blank_gpio));
 #endif
 	gpio_set_value(tlc->xlat_gpio, 1);
 	gpio_set_value(tlc->blank_gpio, 1);
@@ -170,8 +174,9 @@ static void tlc5940_work(struct work_struct *work)
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
 #endif
-    udelay(5); //2usec
+    //udelay(5); //2usec
 	gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
+	gpio_set_value(tlc->blank_gpio, 0); // (philipp), debug
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
 #endif
@@ -220,7 +225,6 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 	frame_tx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
 	frame_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
 	frame_void = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
-
 	// Fill TX frame with 0xAA mask
 	memset(frame_tx, 0xAA, TLC5940_FRAME_SIZE);
 	// Clear RX frame
@@ -228,11 +232,26 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 	// Fill empty frame with 0xFF mask
 	memset(frame_void, 0xFF, TLC5940_FRAME_SIZE);
 
+    // Send void to fill register
 	memset(&tx, 0x00, sizeof(tx));
 	spi_message_init(&msg);
+	tx.rx_buf = frame_void;
+    tx.tx_buf = frame_void;
+    tx.len = TLC5940_FRAME_SIZE ;// (philipp * 2)
+    spi_message_add_tail(&tx, &msg);
+    memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
+    ret = spi_sync(spi, &msg);
+    if (ret) {
+        ret = 0;
+        dev_err(&spi->dev, "spi sync error");
+    }
+
+
+    memset(&tx, 0x00, sizeof(tx));
+    spi_message_init(&msg);
 	tx.rx_buf = frame_rx;
 	tx.tx_buf = frame_tx;
-	tx.len = TLC5940_FRAME_SIZE * 2;
+	tx.len = TLC5940_FRAME_SIZE ;// (philipp * 2)
 	spi_message_add_tail(&tx, &msg);
 
 	/*
@@ -259,21 +278,23 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 		}
 
 #ifdef DEBUG
-		printk("\ntx->");
+        printk(KERN_INFO "frame %d \n", i);
+		printk("tx->");
 		for (k = 0; k < TLC5940_FRAME_SIZE; k++) {
 			printk(KERN_CONT "0x%02x ", frame_tx[k]);
 		}
 
-		printk("\nrx->");
+		printk("rx->");
 		for (k = 0; k < TLC5940_FRAME_SIZE; k++) {
 			printk(KERN_CONT "0x%02x ", frame_rx[k]);
 		}
+
 #endif /* DEBUG */
 
 		// Compare buffers
 		if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE) && (i == 0)) {
 			// TODO: DEBUG ONLY
-			ret = 16;
+			ret = 1;
 			//ret = 0;
 			// Looks like it's a close loop -> no devices connected
 			dev_warn(&spi->dev, "close loop detected");
@@ -282,16 +303,20 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 		} else if (!strncmp(frame_rx, frame_void, TLC5940_FRAME_SIZE)
 				&& (i == (max_sz - 1))) {
 			// We've scanned the bus, but didn't find anything
-			printk(KERN_INFO "actually none detected\n");
+			printk(KERN_INFO "no devices detected\n");
             ret = 1;// (philipp) made 1 the minimum of devices
 			break;
 		} else if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE)){
 			// It seems that we've found something so just return ret
-			break;
-		}
-
-		ret++;
+            printk(KERN_INFO "found match in frame %x \n", i);
+			ret = i;
+            break;
+		} else {
+            ret++;
+        }
 	}
+
+
 
 	kfree(frame_tx);
 	kfree(frame_rx);
@@ -299,7 +324,7 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 
 	mutex_unlock(&dev->mlock);
 
-	return ret;
+    return ret;
 }
 
 static const struct of_device_id tlc5940_of_match[] = {
@@ -321,7 +346,7 @@ static int tlc5940_probe(struct spi_device *spi)
 	int gpio = -EINVAL;
 	int i = 0;
 	int ret = 0;
-    
+   
     printk(KERN_INFO "Hello. Loading tlc5940 driver...\n");
 
 	if (!np) {

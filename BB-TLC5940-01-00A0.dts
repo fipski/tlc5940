@@ -37,8 +37,10 @@ bb_spi0_pins: pinmux_bb_spi0_pins {
                   pinctrl-single,pins = <
                       0x150 0x30	/* P9_22 spi0_sclk.spi0_sclk,		INPUT_PULLUP | MODE0 */
                       0x154 0x30	/* P9_21 spi0_d0.spi0_d0,		INPUT_PULLUP | MODE0 */
-                      0x158 0x10	/* P9_18 spi0_d1.spi0_d1,		OUTPUT_PULLUP | MODE0 */
-                      0x15c 0x10	/* P9_17 spi0_cs0.spi0_cs0,		OUTPUT_PULLUP | MODE0 */
+                      /* 0x158 0x10	 P9_18 spi0_d1.spi0_d1,		OUTPUT_PULLUP | MODE0 */
+                      /* 0x15c 0x10	 P9_17 spi0_cs0.spi0_cs0,		OUTPUT_PULLUP | MODE0 */
+                      0x158 0x00	/* P9_18 spi0_d1.spi0_d1,		OUTPUT_NO_PULLUP | MODE0 */
+                      0x15c 0x00	/* P9_17 spi0_cs0.spi0_cs0,		OUTPUT_NO_PULLUP | MODE0 */
                       >;
               };
 bb_latch_pins: pinmux_bb_latch_pins {
@@ -76,8 +78,9 @@ bb_latch_pins: pinmux_bb_latch_pins {
                 gpio-xlat = <&gpio3 21 1>; /* P9_25 */
                 gpio-blank = <&gpio3 19 1>; /* P9_27 */
                 reg = <0>;
-                spi-max-frequency = <30000000>;
-                spi-cpha;
+                spi-max-frequency = <5000000>;
+                spi-cpha=<1>;
+                spi-cpol=<0>;
             };
         };
     };
