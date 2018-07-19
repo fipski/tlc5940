@@ -31,11 +31,12 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/of_device.h>
+#include <linux/delay.h>
 
 #define DRIVER_NAME						"tlc5940"
-#define OF_MAX_CHAIN_SZ					"chain-sz-max"	// Number of connected devices from the device tree
-#define OF_XLAT_GPIO					"gpio-xlat"		// Latch for loading the data into the output register
-#define OF_BLANK_GPIO					"gpio-blank"	// Blank for turning on/off all leds
+#define OF_MAX_CHAIN_SZ					"chain-sz-max"	// Number of connected devices from the device tree (16)
+#define OF_XLAT_GPIO					"gpio-xlat"		// Latch for loading the data into the output register (device tree)
+#define OF_BLANK_GPIO					"gpio-blank"	// Blank for turning on/off all leds (device tree)
 
 #define TLC5940_DEF_MAX_CHAIN_SZ		4096		// Used to limit the number of loop cycles when performing the discovery (default if not set by the DT)
 #define TLC5940_SPI_MAX_SPEED			30000000	// Maximum possible SPI speed for the device
@@ -45,6 +46,8 @@
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
 #define TLC5940_LED_NAME_SZ				16
 #define TLC5940_HRTMR_DEF_DELAY_NS		5000000		// 5ms
+
+#define XLAT 49 // hard coded io  P9_23 (GPIO49)
 
 struct tlc5940_led {
 	struct tlc5940_dev	*tlc;
@@ -69,6 +72,7 @@ struct tlc5940_dev {
 	int					chain_sz;						// Number of devices in the chain
 	int					xlat_gpio;						// Latch
 	int					blank_gpio;						// Blank
+    int                 xlat_gpio_hard;                 // hardcoded xlatch address
 	bool				new_data;
 };
 
@@ -97,7 +101,7 @@ static void tlc5940_work(struct work_struct *work)
 	struct spi_message msg;
 	__u8 *message_tx;
 	__u8 *message_rx;
-	int led_br_cur = 0;
+    int led_br_cur = 0;
 	int led_br_next = 0;
 	int ret = 0;
 	int i = 0;
@@ -111,7 +115,7 @@ static void tlc5940_work(struct work_struct *work)
 	spi_message_init(&msg);
 	tx.rx_buf = message_rx;
 	tx.tx_buf = message_tx;
-	tx.len = TLC5940_FRAME_SIZE * 2;
+	tx.len = TLC5940_FRAME_SIZE * 2; // (philipp) don't recieve data....
 	spi_message_add_tail(&tx, &msg);
 
 	if (mutex_lock_interruptible(&tlc->mlock)) {
@@ -140,22 +144,37 @@ static void tlc5940_work(struct work_struct *work)
 		}
 
 #ifdef DEBUG
+
+	
+        
 		printk("\ntx->");
 		for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
-			printk("0x%02x ", message_tx[ret]);
-		}
-
+			printk(KERN_CONT "0x%02x ", message_tx[ret]);
+        }
 		printk("\nrx->");
-		for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
-			printk("0x%02x ", message_rx[ret]);
-		}
+        for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
+            printk(KERN_CONT "0x%02x ", message_rx[ret]);
+        }
 #endif /* DEBUG */
-	}
+    }
 
+#ifdef DEBUG
+    printk(KERN_INFO "xlat_gpio adress is %x \n", tlc->xlat_gpio);
+    printk(KERN_INFO "blank address is %x \n", tlc->blank_gpio);
+    printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
+    printk(KERN_INFO "blank address is %x \n", gpio_get_value(tlc->blank_gpio));
+#endif
 	gpio_set_value(tlc->xlat_gpio, 1);
+	gpio_set_value(tlc->blank_gpio, 1);
 	// TODO: add delay
-	gpio_set_value(tlc->xlat_gpio, 0);
-
+#ifdef DEBUG
+    printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
+#endif
+    udelay(5); //2usec
+	gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
+#ifdef DEBUG
+    printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
+#endif
 	tlc->new_data = 0;
 
 	kfree(message_tx);
@@ -242,19 +261,19 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 #ifdef DEBUG
 		printk("\ntx->");
 		for (k = 0; k < TLC5940_FRAME_SIZE; k++) {
-			printk("0x%02x ", frame_tx[k]);
+			printk(KERN_CONT "0x%02x ", frame_tx[k]);
 		}
 
 		printk("\nrx->");
 		for (k = 0; k < TLC5940_FRAME_SIZE; k++) {
-			printk("0x%02x ", frame_rx[k]);
+			printk(KERN_CONT "0x%02x ", frame_rx[k]);
 		}
 #endif /* DEBUG */
 
 		// Compare buffers
 		if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE) && (i == 0)) {
 			// TODO: DEBUG ONLY
-			ret = 6;
+			ret = 16;
 			//ret = 0;
 			// Looks like it's a close loop -> no devices connected
 			dev_warn(&spi->dev, "close loop detected");
@@ -263,7 +282,8 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 		} else if (!strncmp(frame_rx, frame_void, TLC5940_FRAME_SIZE)
 				&& (i == (max_sz - 1))) {
 			// We've scanned the bus, but didn't find anything
-			ret = 0;
+			printk(KERN_INFO "actually none detected\n");
+            ret = 1;// (philipp) made 1 the minimum of devices
 			break;
 		} else if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE)){
 			// It seems that we've found something so just return ret
@@ -301,6 +321,8 @@ static int tlc5940_probe(struct spi_device *spi)
 	int gpio = -EINVAL;
 	int i = 0;
 	int ret = 0;
+    
+    printk(KERN_INFO "Hello. Loading tlc5940 driver...\n");
 
 	if (!np) {
 		printk(KERN_ERR "tlc5940: No platform data specified");
@@ -387,6 +409,8 @@ static int tlc5940_probe(struct spi_device *spi)
 			return -EINVAL;
 		}
 	}
+
+
 
 	// Set the direction of XLAT pin as OUT, set it low by-default
 	ret = gpio_direction_output(tlcdev->xlat_gpio, 0);
@@ -495,7 +519,7 @@ static int tlc5940_remove(struct spi_device *spi)
 	}
 
 	dev_info(dev, "driver removed");
-
+    printk(KERN_INFO "Bye / TLC5940 \n");
 	return 0;
 }
 

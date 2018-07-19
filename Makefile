@@ -1,11 +1,8 @@
 obj-m += tlc5940.o
 
-export ARCH=arm
-export CROSS_COMPILE=/opt/gcc-linaro-4.9-2014.11-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
+KDIR ?= /lib/modules/$(shell uname -r)/build
 
-KDIR ?= /home/andrei/src/work/BeagleBoneBlack/Kernel/ti-linux-kernel
-
-all: clean
+all:
 	make -C $(KDIR) M=$(PWD) modules
 
 clean:

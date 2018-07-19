@@ -11,70 +11,74 @@
 /plugin/;
 
 / {
-	compatible = "ti,beaglebone", "ti,beaglebone-black", "ti,beaglebone-green";
+    compatible = "ti,beaglebone", "ti,beaglebone-black", "ti,beaglebone-green";
 
-	/* identification */
-	part-number = "BB-TLC5940-01";
-	version = "00A0";
+    /* identification */
+    part-number = "BB-TLC5940-01";
+    version = "00A0";
 
-	/* state the resources this cape uses */
-	exclusive-use =
-		/* the pin header uses */
-		"P9.17",	/* spi0_cs0 */
-		"P9.18",	/* spi0_d1 */
-		"P9.21",	/* spi0_d0 */
-		"P9.22",	/* spi0_sclk */
-		"P9.25",	/* xlat */
-		/* the hardware ip uses */
-		"gpio3_21",
-		"spi0";
+    /* state the resources this cape uses */
+    exclusive-use =
+        /* the pin header uses */
+        "P9.17",	/* spi0_cs0 */
+        "P9.18",	/* spi0_d1 */
+        "P9.21",	/* spi0_d0 */
+        "P9.22",	/* spi0_sclk */
+        "P9.25",	/* xlat */
+        /* the hardware ip uses */
+        "gpio3_21",
+        "spi0";
 
-	fragment@0 {
-		target = <&am33xx_pinmux>;
-		__overlay__ {
-			/* default state has all gpios released and mode set to uart1 */
-			bb_spi0_pins: pinmux_bb_spi0_pins {
-				pinctrl-single,pins = <
-					0x150 0x30	/* spi0_sclk.spi0_sclk,		INPUT_PULLUP | MODE0 */
-					0x154 0x30	/* spi0_d0.spi0_d0,		INPUT_PULLUP | MODE0 */
-					0x158 0x10	/* spi0_d1.spi0_d1,		OUTPUT_PULLUP | MODE0 */
-					0x15c 0x10	/* spi0_cs0.spi0_cs0,		OUTPUT_PULLUP | MODE0 */
-				>;
-			};
-			bb_latch_pins: pinmux_bb_latch_pins {
-				pinctrl-single,pins = <
-					0x1ac 0x37	/* mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
-					0x1a4 0x37	/* mcasp0_fsr.gpio3_19		RX_ENABLED | PULLUP | MODE7 */
-				>;
-			};
-		};
-	};
+    fragment@0 {
+        target = <&am33xx_pinmux>;
+        __overlay__ {
+            /* default state has all gpios released and mode set to uart1 */
+bb_spi0_pins: pinmux_bb_spi0_pins {
+                  pinctrl-single,pins = <
+                      0x150 0x30	/* P9_22 spi0_sclk.spi0_sclk,		INPUT_PULLUP | MODE0 */
+                      0x154 0x30	/* P9_21 spi0_d0.spi0_d0,		INPUT_PULLUP | MODE0 */
+                      0x158 0x10	/* P9_18 spi0_d1.spi0_d1,		OUTPUT_PULLUP | MODE0 */
+                      0x15c 0x10	/* P9_17 spi0_cs0.spi0_cs0,		OUTPUT_PULLUP | MODE0 */
+                      >;
+              };
+bb_latch_pins: pinmux_bb_latch_pins {
+                   pinctrl-single,pins = <
+                       /*	0x1ac 0x37	 P9_25 mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
+                       /*	0x1a4 0x37	 P9_27 mcasp0_fsr.gpio3_19		RX_ENABLED | PULLUP | MODE7 */
 
-	fragment@1 {
-		target = <&spi0>;
-		__overlay__ {
-			#address-cells = <1>;
-			#size-cells = <0>;
+                       0x1ac 0x17	/* P9_25 mcasp0_ahclkx.gpio3_21,	Output | PULLUP | MODE7 */
+                       0x1a4 0x17	/* P9_27 mcasp0_fsr.gpio3_19		Output | PULLUP | MODE7 */
 
-			status = "okay";
-			pinctrl-names = "default";
-			pinctrl-0 = <&bb_spi0_pins>;
-			ti,pio-mode; /* disable dma when used as an overlay, dma gets stuck at 160 bits... */
+                       >;
+               };
+        };
+    };
 
-			tlc5940@0 {
-				#address-cells = <1>;
-				#size-cells = <0>;
+    fragment@1 {
+        target = <&spi0>;
+        __overlay__ {
+#address-cells = <1>;
+#size-cells = <0>;
 
-				compatible = "ti,tlc5940";
-				pinctrl-names = "tlc5940-xlat";
-				pinctrl-0 = <&bb_latch_pins>;
-				chain-sz-max = <16>;
-				gpio-xlat = <&gpio3 21 1>;
-				gpio-blank = <&gpio3 19 1>;
-				reg = <0>;
-				spi-max-frequency = <30000000>;
-				spi-cpha;
-			};
-		};
-	};
+            status = "okay";
+            pinctrl-names = "default";
+            pinctrl-0 = <&bb_spi0_pins>;
+            ti,pio-mode; /* disable dma when used as an overlay, dma gets stuck at 160 bits... */
+
+            tlc5940@0 {
+#address-cells = <1>;
+#size-cells = <0>;
+
+                compatible = "ti,tlc5940";
+                pinctrl-names = "tlc5940-xlat";
+                pinctrl-0 = <&bb_latch_pins>;
+                chain-sz-max = <16>;
+                gpio-xlat = <&gpio3 21 1>; /* P9_25 */
+                gpio-blank = <&gpio3 19 1>; /* P9_27 */
+                reg = <0>;
+                spi-max-frequency = <30000000>;
+                spi-cpha;
+            };
+        };
+    };
 };
