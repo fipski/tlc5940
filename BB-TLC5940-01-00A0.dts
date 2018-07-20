@@ -56,10 +56,32 @@ bb_latch_pins: pinmux_bb_latch_pins {
 
                        >;
                };
+
+ecap2_pins_default: pinmux_ecap2_pins_default {
+                        pinctrl-single,pins = <
+                            0x19c 0x4/* P9_28 mcasp0_ahclkr.ecap2_in_pwm2_out MODE4 */
+                            >;
+                    };
+
+ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
+                      pinctrl-single,pins = <
+                          0x19c 0x2f/* P9_28 mcasp0_ahclkr.ecap2_in_pwm2_out */
+                          >;
+                  };
         };
     };
 
     fragment@1 {
+        target = <&ecap2>;
+        __overlay__ {
+            status = "okay";
+            pinctrl-names = "default", "sleep";
+            pinctrl-0 = <&ecap2_pins_default>;
+            pinctrl-1 = <&ecap2_pins_sleep>;
+        };
+    };
+
+    fragment@2 {
         target = <&spi0>;
         __overlay__ {
 #address-cells = <1>;
@@ -80,6 +102,7 @@ bb_latch_pins: pinmux_bb_latch_pins {
                 chain-sz-max = <16>;
                 gpio-xlat = <&gpio0 15 1>; /* P9_24 */
                 gpio-blank = <&gpio3 19 1>; /* P9_27 */
+                pwms = <&ecap2 0 1638400 0>; /* P9_28 */
                 reg = <0>;
                 spi-max-frequency = <5000000>;
                 spi-cpha=<1>;

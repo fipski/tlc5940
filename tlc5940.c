@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-#define DEBUG
+//#define DEBUG
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -301,7 +301,7 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
 		} else if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE)){
 			// It seems that we've found something so just return ret
             printk(KERN_INFO "found match in frame %x \n", i);
-			ret = i;
+			ret = 16;
             break;
 		} else {
             ret++;
@@ -433,7 +433,30 @@ static int tlc5940_probe(struct spi_device *spi)
 		}
 	}
 
+    /*
+    // Get PWM pin
+	pwm = devm_of_pwm_get(dev, np, NULL);
+	if (IS_ERR(pwm)) {
+		ret = PTR_ERR(pwm);
+		dev_err(dev, "failed to get GSCLK PWM pin: %d\n", ret);
+		return ret;
+	}
 
+	ret = pwm_config(pwm, TLC5940_GSCLK_DUTY_CYCLE_NS, TLC5940_GSCLK_PERIOD_NS);
+	if (ret) {
+		dev_err(
+		  dev,
+		  "failed to configure pwm with period %d, duty cycle %d: %d\n",
+		  TLC5940_GSCLK_PERIOD_NS,
+		  TLC5940_GSCLK_DUTY_CYCLE_NS,
+		  ret
+		);
+		return ret;
+	}
+
+	pwm_enable(pwm);
+
+    */
 
 	// Set the direction of XLAT pin as OUT, set it low by-default
 	ret = gpio_direction_output(tlcdev->xlat_gpio, 0);

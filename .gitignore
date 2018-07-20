@@ -6,6 +6,7 @@
 *.ko
 *.ko.cmd
 .tmp_versions/
+*.bak
 Module.symvers
 modules.order
 tags
