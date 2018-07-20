@@ -6,6 +6,10 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
+ *
+ * HDMI needs to be disabled for this to work, some outputs are already allocated
+ * Pinmux documented in BeagleboneBlackP9HeaderTable.pdf
+ * 
  */
 /dts-v1/;
 /plugin/;
@@ -26,11 +30,12 @@
         "P9.22",	/* spi0_sclk */
         "P9.24",    /* */
         "P9.27",	/* xlat */
+        "P9.28",    /* pwms */
         /* the hardware ip uses */
         "gpio0_15",
         "gpio3_19",
-        "spi0";
-
+        "spi0",
+        "ecap2";
     fragment@0 {
         target = <&am33xx_pinmux>;
         __overlay__ {
@@ -49,10 +54,8 @@ bb_latch_pins: pinmux_bb_latch_pins {
                    pinctrl-single,pins = <
                        /*	0x1ac 0x37	 P9_25 mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
                        /*	0x1a4 0x37	 P9_27 mcasp0_fsr.gpio3_19		RX_ENABLED | PULLUP | MODE7 */
-
-                       /* seems to be allocated... */ 0x1ac 0x17	/* P9_25 mcasp0_ahclkx.gpio3_21,	Output | PULLUP | MODE7 */
-                       0x184 0x17   /* P9_24 output pullup mode 7 */
-                       0x1a4 0x17	/* P9_27 mcasp0_fsr.gpio3_19		Output | PULLUP | MODE7 */
+                       0x184 0x17   /* P9_24 */
+                       0x1a4 0x17	/* P9_27 */
 
                        >;
                };
@@ -71,7 +74,21 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
         };
     };
 
-    fragment@1 {
+	fragment@1 {
+		target = <&epwmss2>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@2 {
+		target = <&ehrpwm2>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+    fragment@3 {
         target = <&ecap2>;
         __overlay__ {
             status = "okay";
@@ -81,7 +98,7 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
         };
     };
 
-    fragment@2 {
+    fragment@4 {
         target = <&spi0>;
         __overlay__ {
 #address-cells = <1>;
@@ -102,7 +119,7 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
                 chain-sz-max = <16>;
                 gpio-xlat = <&gpio0 15 1>; /* P9_24 */
                 gpio-blank = <&gpio3 19 1>; /* P9_27 */
-                pwms = <&ecap2 0 1638400 0>; /* P9_28 */
+                pwms = <&ecap2 0 50000 0>; /* P9_28, name must be pwms */
                 reg = <0>;
                 spi-max-frequency = <5000000>;
                 spi-cpha=<1>;
