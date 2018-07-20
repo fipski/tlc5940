@@ -24,9 +24,11 @@
         "P9.18",	/* spi0_d1 */
         "P9.21",	/* spi0_d0 */
         "P9.22",	/* spi0_sclk */
-        "P9.25",	/* xlat */
+        "P9.24",    /* */
+        "P9.27",	/* xlat */
         /* the hardware ip uses */
-        "gpio3_21",
+        "gpio0_15",
+        "gpio3_19",
         "spi0";
 
     fragment@0 {
@@ -48,7 +50,8 @@ bb_latch_pins: pinmux_bb_latch_pins {
                        /*	0x1ac 0x37	 P9_25 mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
                        /*	0x1a4 0x37	 P9_27 mcasp0_fsr.gpio3_19		RX_ENABLED | PULLUP | MODE7 */
 
-                       0x1ac 0x17	/* P9_25 mcasp0_ahclkx.gpio3_21,	Output | PULLUP | MODE7 */
+                       /* seems to be allocated... */ 0x1ac 0x17	/* P9_25 mcasp0_ahclkx.gpio3_21,	Output | PULLUP | MODE7 */
+                       0x184 0x17   /* P9_24 output pullup mode 7 */
                        0x1a4 0x17	/* P9_27 mcasp0_fsr.gpio3_19		Output | PULLUP | MODE7 */
 
                        >;
@@ -75,7 +78,7 @@ bb_latch_pins: pinmux_bb_latch_pins {
                 pinctrl-names = "tlc5940-xlat";
                 pinctrl-0 = <&bb_latch_pins>;
                 chain-sz-max = <16>;
-                gpio-xlat = <&gpio3 21 1>; /* P9_25 */
+                gpio-xlat = <&gpio0 15 1>; /* P9_24 */
                 gpio-blank = <&gpio3 19 1>; /* P9_27 */
                 reg = <0>;
                 spi-max-frequency = <5000000>;

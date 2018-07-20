@@ -162,21 +162,13 @@ static void tlc5940_work(struct work_struct *work)
 #endif /* DEBUG */
     }
 
-#ifdef DEBUG
-    printk(KERN_INFO "xlat pin is %x \n", tlc->xlat_gpio);
-    printk(KERN_INFO "blank pin is %x \n", tlc->blank_gpio);
-    printk(KERN_INFO "xlat is %x \n", gpio_get_value(tlc->xlat_gpio));
-    printk(KERN_INFO "blank is %x \n", gpio_get_value(tlc->blank_gpio));
-#endif
-	gpio_set_value(tlc->xlat_gpio, 1);
 	gpio_set_value(tlc->blank_gpio, 1);
-	// TODO: add delay
-#ifdef DEBUG
-    printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
-#endif
-    //udelay(5); //2usec
+	gpio_set_value(tlc->xlat_gpio, 1);
+	// TODO: add delay, figure out timing
+    udelay(1); //usec
 	gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
-	gpio_set_value(tlc->blank_gpio, 0); // (philipp), debug
+	udelay(10);
+    gpio_set_value(tlc->blank_gpio, 0); // (philipp), debug
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
 #endif
@@ -404,14 +396,17 @@ static int tlc5940_probe(struct spi_device *spi)
 	// Get XLAT pin
 	if (of_match_device(of_match_ptr(tlc5940_of_match), dev)) {
 		gpio = of_get_named_gpio(np, OF_XLAT_GPIO, 0);
-		if (gpio_is_valid(gpio)) {
+        if (gpio_is_valid(gpio)) {
 			if (devm_gpio_request(dev, gpio, OF_XLAT_GPIO)) {
 				dev_err(dev, "unable to request gpio "
 						"for XLAT pin");
 				return -EINVAL;
 			}
 			tlcdev->xlat_gpio = gpio;
-		} else {
+#ifdef DEBUG
+		printk(KERN_INFO "xlat pin assigned %d", gpio);
+#endif
+        } else {
 			dev_err(dev, "specified gpio pin for XLAT "
 					"is invalid");
 			return -EINVAL;
@@ -428,6 +423,9 @@ static int tlc5940_probe(struct spi_device *spi)
 				return -EINVAL;
 			}
 			tlcdev->blank_gpio = gpio;
+#ifdef DEBUG
+		printk(KERN_INFO "blank pin assigned %d", gpio);
+#endif
 		} else {
 			dev_err(dev, "specified gpio pin for BLANK "
 					"is invalid");
