@@ -47,10 +47,10 @@
 #define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_HRTMR_DEF_DELAY_NS		5000000		// 5ms
-#define TLC5940_GSCLK_SPEED_HZ  250000
+#define TLC5940_GSCLK_SPEED_HZ  4000000
 #define TLC5940_GSCLK_PERIOD_NS (1000000000 / TLC5940_GSCLK_SPEED_HZ)
-#define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 2)
+#define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS)
+#define TLC5940_HRTMR_DEF_DELAY_NS  (4096 * TLC5940_GSCLK_DUTY_CYCLE_NS * 1.05)
 #define TLC5940_BLANK_PERIOD_NS (4096 * TLC5940_GSCLK_PERIOD_NS)
 
 
@@ -86,11 +86,17 @@ static unsigned long hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS;
 static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
 {
     struct tlc5940_dev *tlc = container_of(timer, struct tlc5940_dev, timer);
+    int blank_gpio = tlc->blank_gpio;   
+
+    hrtimer_forward_now(timer, ktime_set(0, hrtimer_delay));
+
+    gpio_set_value(blank_gpio, 1);
+    udelay(5); //1 u sec gets stable resets
+    gpio_set_value(blank_gpio, 0);
 
     if (tlc->new_data)
         schedule_work(&tlc->work);
 
-    hrtimer_forward_now(timer, ktime_set(0, hrtimer_delay));
 
     return HRTIMER_RESTART;
 }
@@ -167,13 +173,10 @@ static void tlc5940_work(struct work_struct *work)
 #endif /* DEBUG */
     }
 
-    gpio_set_value(tlc->blank_gpio, 1);
     gpio_set_value(tlc->xlat_gpio, 1);
     // TODO: add delay, figure out timing
-    udelay(1); //usec
+    udelay(1);
     gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
-    udelay(10);
-    gpio_set_value(tlc->blank_gpio, 0); // (philipp), debug
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
 #endif
@@ -537,7 +540,7 @@ static int tlc5940_probe(struct spi_device *spi)
     }
 
     spi_set_drvdata(spi, tlcdev);
-    hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS * tlcdev->chain_sz;
+    //hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS * tlcdev->chain_sz;
     hrtimer_start(timer, ktime_set(1, 0), HRTIMER_MODE_REL);
 
     dev_info(dev, "TI tlc5940 SPI driver registered");
