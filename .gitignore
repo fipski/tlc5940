@@ -11,3 +11,6 @@ Module.symvers
 modules.order
 tags
 ctags
+kerneltags
+.vimrc
+

@@ -1,8 +1,8 @@
 /*
- * Copyright 2016
- * Andrei Andreyanau <a.andreyanau@sam-solutions.com
+ * Copyright 2018
  *
  * Based on:
+ *  - Andrei Andreyanau <a.andreyanau@sam-solutions.com
  * 	- leds-tlc5940.c by Jordan Yelloz <jordan@yelloz.me>
  * 	- leds-dac124s085.c by Guennadi Liakhovetski <lg@denx.de>
  *
@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-#define DEBUG
+/* #define DEBUG */
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -39,7 +39,8 @@
 #define OF_XLAT_GPIO					"gpio-xlat"		// Latch for loading the data into the output register (device tree)
 #define OF_BLANK_GPIO					"gpio-blank"	// Blank for turning on/off all leds (device tree)
 #define OF_PWM                          "pwms"
-#define TLC5940_DEF_MAX_CHAIN_SZ		4096		// Used to limit the number of loop cycles when performing the discovery (default if not set by the DT)
+#define TLC5940_DEF_MAX_CHAIN_SZ		4096    // Used to limit the number of loop
+                                                //cycles when performing the discovery (if not set by the DT)
 #define TLC5940_SPI_MAX_SPEED			30000000	// Maximum possible SPI speed for the device
 #define TLC5940_SPI_BITS_PER_WORD		8			// Word width
 #define TLC590_SPI_DELAY                0           // Spi delay in usec
@@ -47,10 +48,10 @@
 #define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_GSCLK_SPEED_HZ  4000000
+#define TLC5940_GSCLK_SPEED_HZ  4096000
 #define TLC5940_GSCLK_PERIOD_NS (1000000000 / TLC5940_GSCLK_SPEED_HZ)
-#define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS)
-#define TLC5940_HRTMR_DEF_DELAY_NS  (4096 * TLC5940_GSCLK_DUTY_CYCLE_NS * 1.05)
+#define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 1)
+#define TLC5940_HRTMR_DEF_DELAY_NS  (4096 * TLC5940_GSCLK_DUTY_CYCLE_NS )
 #define TLC5940_BLANK_PERIOD_NS (4096 * TLC5940_GSCLK_PERIOD_NS)
 
 
@@ -86,17 +87,15 @@ static unsigned long hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS;
 static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
 {
     struct tlc5940_dev *tlc = container_of(timer, struct tlc5940_dev, timer);
-    int blank_gpio = tlc->blank_gpio;   
 
     hrtimer_forward_now(timer, ktime_set(0, hrtimer_delay));
-
-    gpio_set_value(blank_gpio, 1);
+    /* toggle blank pin tu reset tlc5940's GS Counter */
+    gpio_set_value(tlc->blank_gpio, 1);
     udelay(5); //1 u sec gets stable resets
-    gpio_set_value(blank_gpio, 0);
+    gpio_set_value(tlc->blank_gpio, 0);
 
     if (tlc->new_data)
         schedule_work(&tlc->work);
-
 
     return HRTIMER_RESTART;
 }
@@ -105,7 +104,6 @@ static void tlc5940_work(struct work_struct *work)
 {
     struct tlc5940_dev *tlc = container_of(work, struct tlc5940_dev, work);
     struct spi_device *spi = tlc->spi;
-    //struct pwm_device *pwm = tlc->pwm; // philipp TODO
     struct device *dev = &spi->dev;
     struct tlc5940_dev *cur_item;
     struct tlc5940_dev *next_item;
@@ -122,7 +120,7 @@ static void tlc5940_work(struct work_struct *work)
     message_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
 
     // Set delay between words
-    // tx.delay_usecs = TLC590_SPI_DELAY; //not working??
+    // tx.delay_usecs = TLC590_SPI_DELAY;
 
     memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
     memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
@@ -130,9 +128,7 @@ static void tlc5940_work(struct work_struct *work)
     spi_message_init(&msg);
     tx.rx_buf = message_rx;
     tx.tx_buf = message_tx;
-    tx.len = TLC5940_FRAME_SIZE; //(philipp * 2)
-
-
+    tx.len = TLC5940_FRAME_SIZE; //is documented as * 2
 
     spi_message_add_tail(&tx, &msg);
 
@@ -148,7 +144,6 @@ static void tlc5940_work(struct work_struct *work)
         for (i = 0; i < (TLC5940_DEV_MAX_LEDS >> 1); i++) {
             led_br_cur = cur_item->leds[i * 2].brightness;
             led_br_next = cur_item->leds[i * 2 + 1].brightness;
-
             message_tx[3 * i + 0] = (led_br_cur >> 4) & 0xff;
             message_tx[3 * i + 1] =
                 ((led_br_cur & 0x0f) << 4) + ((led_br_next >> 8) & 0x0f);
@@ -173,10 +168,12 @@ static void tlc5940_work(struct work_struct *work)
 #endif /* DEBUG */
     }
 
+    /* gpio_set_value(tlc->blank_gpio, 1); */
     gpio_set_value(tlc->xlat_gpio, 1);
     // TODO: add delay, figure out timing
     udelay(1);
     gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
+    /* gpio_set_value(tlc->blank_gpio, 0); */
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
 #endif
@@ -192,13 +189,12 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
         const enum led_brightness brightness)
 {
     struct tlc5940_led *led = container_of(ldev, struct tlc5940_led, ldev);
-    struct tlc5940_dev *dev = led->tlc;
 
     spin_lock(&led->lock);
     led->brightness = brightness;
     spin_unlock(&led->lock);
 
-    dev->new_data = 1;
+    led->tlc->new_data = 1;
 }
 
 static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
@@ -225,19 +221,21 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
     frame_tx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
     frame_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
     frame_void = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
+    
     // Fill TX frame with 0xAA mask
     memset(frame_tx, 0xAA, TLC5940_FRAME_SIZE);
     // Clear RX frame
     memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
     // Fill empty frame with 0xFF mask
-    memset(frame_void, 0xFF, TLC5940_FRAME_SIZE);
+    memset(frame_void, 0xFE, TLC5940_FRAME_SIZE);
 
     // Send void to fill register
     memset(&tx, 0x00, sizeof(tx));
     spi_message_init(&msg);
     tx.rx_buf = frame_void;
     tx.tx_buf = frame_void;
-    tx.len = TLC5940_FRAME_SIZE ;// (philipp * 2)
+    tx.len = TLC5940_FRAME_SIZE;
+
     spi_message_add_tail(&tx, &msg);
     memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
     ret = spi_sync(spi, &msg);
@@ -269,11 +267,9 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
         // Clear receive buffer
         memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
         // Start synced SPI ops
-        ret = spi_sync(spi, &msg);
-        if (ret) {
+        if (spi_sync(spi, &msg)) {
             ret = 0;
             dev_err(&spi->dev, "spi sync error");
-
             break;
         }
 
@@ -283,48 +279,56 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
         for (k = 0; k < TLC5940_FRAME_SIZE; k++) {
             printk(KERN_CONT "0x%02x ", frame_tx[k]);
         }
-
         printk("rx->");
         for (k = 0; k < TLC5940_FRAME_SIZE; k++) {
             printk(KERN_CONT "0x%02x ", frame_rx[k]);
         }
-
 #endif /* DEBUG */
-
         // Compare buffers
         if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE) && (i == 0)) {
-            // TODO: DEBUG ONLY
-            ret = 1;
-            //ret = 0;
+            ret = 0;
             // Looks like it's a close loop -> no devices connected
             dev_warn(&spi->dev, "close loop detected");
-
             break;
         } else if (!strncmp(frame_rx, frame_void, TLC5940_FRAME_SIZE)
                 && (i == (max_sz - 1))) {
             // We've scanned the bus, but didn't find anything
-            printk(KERN_INFO "no devices detected\n");
-            ret = 1;// (philipp) made 1 the minimum of devices
+            dev_warn(&spi->dev, "no devices detected");
+            ret = 0;// (philipp) made 1 the minimum of devices
             break;
         } else if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE)){
             // It seems that we've found something so just return ret
             printk(KERN_INFO "found match in frame %x \n", i);
-            ret = 1;
+            ret = i; 
             break;
         } else {
             ret++;
         }
     }
 
+    memset(&tx, 0x00, sizeof(tx));
+    spi_message_init(&msg);
+    tx.rx_buf = frame_rx;
+    tx.tx_buf = frame_rx;
+    tx.len = TLC5940_FRAME_SIZE;
 
+    spi_message_add_tail(&tx, &msg);
+    memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
+    
+    if (spi_sync(spi, &msg)) {
+        dev_err(&spi->dev, "spi sync error");
+    }
 
     kfree(frame_tx);
     kfree(frame_rx);
     kfree(frame_void);
 
     mutex_unlock(&dev->mlock);
+#ifdef DEBUG
+    ret = 16;
+#endif
 
-    return ret;
+    return 32;
 }
 
 static const struct of_device_id tlc5940_of_match[] = {
@@ -463,15 +467,11 @@ static int tlc5940_probe(struct spi_device *spi)
         return ret;
     }
 
-   pwm_enable(pwm);
-    
-
     // Set the direction of XLAT pin as OUT, set it low by-default
     ret = gpio_direction_output(tlcdev->xlat_gpio, 0);
     if (ret) {
         dev_err(dev, "Failed to configure XLAT pin for "
                 "output: %d\n", ret);
-
         return -EINVAL;
     }
 
@@ -480,7 +480,6 @@ static int tlc5940_probe(struct spi_device *spi)
     if (ret) {
         dev_err(dev, "Failed to configure BLANK pin for "
                 "output: %d\n", ret);
-
         return -EINVAL;
     }
 
@@ -538,7 +537,7 @@ static int tlc5940_probe(struct spi_device *spi)
         }
         list_add(&item->list, &tlcdev->list);
     }
-
+    pwm_enable(pwm);
     spi_set_drvdata(spi, tlcdev);
     //hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS * tlcdev->chain_sz;
     hrtimer_start(timer, ktime_set(1, 0), HRTIMER_MODE_REL);

@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2013 CircuitCo
  *
- * Virtual cape for SPI0 on connector pins P9.22 P9.21 P9.18 P9.17
+ * Device Tree Overlay for SPI0 and ECAP2
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -28,8 +28,8 @@
         "P9.18",	/* spi0_d1 */
         "P9.21",	/* spi0_d0 */
         "P9.22",	/* spi0_sclk */
-        "P9.24",    /* */
-        "P9.27",	/* xlat */
+        "P9.24",    /* xlat */
+        "P9.27",	/* blank */
         "P9.28",    /* pwms */
         /* the hardware ip uses */
         "gpio0_15",
@@ -44,18 +44,18 @@ bb_spi0_pins: pinmux_bb_spi0_pins {
                   pinctrl-single,pins = <
                       0x150 0x30	/* P9_22 spi0_sclk.spi0_sclk,		INPUT_PULLUP | MODE0 */
                       0x154 0x30	/* P9_21 spi0_d0.spi0_d0,		INPUT_PULLUP | MODE0 */
-                      /* 0x158 0x10	 P9_18 spi0_d1.spi0_d1,		OUTPUT_PULLUP | MODE0 */
-                      /* 0x15c 0x10	 P9_17 spi0_cs0.spi0_cs0,		OUTPUT_PULLUP | MODE0 */
-                      0x158 0x00	/* P9_18 spi0_d1.spi0_d1,		OUTPUT_NO_PULLUP | MODE0 */
-                      0x15c 0x00	/* P9_17 spi0_cs0.spi0_cs0,		OUTPUT_NO_PULLUP | MODE0 */
+                      0x158 0x10	/* P9_18 spi0_d1.spi0_d1,		OUTPUT_PULLUP | MODE0 */
+                      0x15c 0x10	/* P9_17 spi0_cs0.spi0_cs0,		OUTPUT_PULLUP | MODE0 */
+                      /* 0x158 0x00 */	/* P9_18 spi0_d1.spi0_d1,		OUTPUT_NO_PULLUP | MODE0 */
+                      /* 0x15c 0x00	*/ /* P9_17 spi0_cs0.spi0_cs0,		OUTPUT_NO_PULLUP | MODE0 */
                       >;
               };
 bb_latch_pins: pinmux_bb_latch_pins {
                    pinctrl-single,pins = <
                        /*	0x1ac 0x37	 P9_25 mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
                        /*	0x1a4 0x37	 P9_27 mcasp0_fsr.gpio3_19		RX_ENABLED | PULLUP | MODE7 */
-                       0x184 0x17   /* P9_24 */
-                       0x1a4 0x17	/* P9_27 */
+                       0x184 0x17   /* P9_24 Output Pullup Mode7*/
+                       0x1a4 0x17	/* P9_27 Output Pullup Mode7*/
 
                        >;
                };
@@ -116,7 +116,7 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
                 compatible = "ti,tlc5940";
                 pinctrl-names = "tlc5940-xlat";
                 pinctrl-0 = <&bb_latch_pins>;
-                chain-sz-max = <16>;
+                chain-sz-max = <128>;
                 gpio-xlat = <&gpio0 15 1>; /* P9_24 */
                 gpio-blank = <&gpio3 19 1>; /* P9_27 */
                 pwms = <&ecap2 0 50000 0>; /* P9_28, name must be pwms */
