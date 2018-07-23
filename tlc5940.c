@@ -48,11 +48,11 @@
 #define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
 #define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_GSCLK_SPEED_HZ  4096000
+#define TLC5940_GSCLK_SPEED_HZ  (1000*4096)
 #define TLC5940_GSCLK_PERIOD_NS (1000000000 / TLC5940_GSCLK_SPEED_HZ)
-#define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 1)
+#define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 2)
 #define TLC5940_HRTMR_DEF_DELAY_NS  (4096 * TLC5940_GSCLK_DUTY_CYCLE_NS )
-#define TLC5940_BLANK_PERIOD_NS (4096 * TLC5940_GSCLK_PERIOD_NS)
+#define TLC5940_BLANK_PERIOD_NS (4096 * TLC5940_GSCLK_PERIOD_NS *0.98) 
 
 
 struct tlc5940_led {
@@ -82,7 +82,7 @@ struct tlc5940_dev {
     bool				new_data;
 };
 
-static unsigned long hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS;
+static unsigned long hrtimer_delay = TLC5940_BLANK_PERIOD_NS;
 
 static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
 {
@@ -91,7 +91,8 @@ static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
     hrtimer_forward_now(timer, ktime_set(0, hrtimer_delay));
     /* toggle blank pin tu reset tlc5940's GS Counter */
     gpio_set_value(tlc->blank_gpio, 1);
-    udelay(5); //1 u sec gets stable resets
+    udelay(10); //1 u sec gets stable resets
+    
     gpio_set_value(tlc->blank_gpio, 0);
 
     if (tlc->new_data)
@@ -352,7 +353,7 @@ static int tlc5940_probe(struct spi_device *spi)
     int i = 0;
     int ret = 0;
 
-    printk(KERN_INFO "Hello. Loading tlc5940 driver...\n");
+    dev_info(dev, "Loading TI TLC5940 Driver...");
 
     if (!np) {
         printk(KERN_ERR "tlc5940: No platform data specified");
@@ -539,10 +540,10 @@ static int tlc5940_probe(struct spi_device *spi)
     }
     pwm_enable(pwm);
     spi_set_drvdata(spi, tlcdev);
-    //hrtimer_delay = TLC5940_HRTMR_DEF_DELAY_NS * tlcdev->chain_sz;
+    //hrtimer_delay = TLC5940_BLANK_PERIOD_NS * tlcdev->chain_sz;
     hrtimer_start(timer, ktime_set(1, 0), HRTIMER_MODE_REL);
 
-    dev_info(dev, "TI tlc5940 SPI driver registered");
+    dev_info(dev, "SPI driver registered");
 
     return ret;
 }
@@ -574,7 +575,6 @@ static int tlc5940_remove(struct spi_device *spi)
             devm_kfree(dev, cur_node);
     }
     dev_info(dev, "driver removed");
-    printk(KERN_INFO "Bye / TLC5940 \n");
     return 0;
 }
 

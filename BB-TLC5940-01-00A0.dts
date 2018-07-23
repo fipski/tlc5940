@@ -107,7 +107,7 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
             status = "okay";
             pinctrl-names = "default";
             pinctrl-0 = <&bb_spi0_pins>;
-            ti,pio-mode; /* disable dma when used as an overlay, dma gets stuck at 160 bits... */
+            /*ti,pio-mode;*/ /* disable dma when used as an overlay, dma gets stuck at 160 bits... */
 
             tlc5940@0 {
 #address-cells = <1>;
@@ -121,7 +121,7 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
                 gpio-blank = <&gpio3 19 1>; /* P9_27 */
                 pwms = <&ecap2 0 50000 0>; /* P9_28, name must be pwms */
                 reg = <0>;
-                spi-max-frequency = <5000000>;
+                spi-max-frequency = <10000000>;
                 spi-cpha=<1>;
                 spi-cpol=<0>;
             };
