@@ -135,7 +135,7 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
                 gpio-xlat = <&gpio3 19 1>; /* P9_27 */
                 pwms = <&ecap0 0 50000 0>; /* P9_28, name must be pwms */
                 reg = <0>;
-                spi-max-frequency = <10000000>;
+                spi-max-frequency = <1000000>;
                 spi-cpha=<1>;
                 spi-cpol=<0>;
             };

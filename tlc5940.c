@@ -2,8 +2,8 @@
  * Copyright 2018
  *
  * Based on:
- *  - Andrei Andreyanau <a.andreyanau@sam-solutions.com
  * 	- leds-tlc5940.c by Jordan Yelloz <jordan@yelloz.me>
+ *  - branch of Andrei Andreyanau <a.andreyanau@sam-solutions.com
  * 	- leds-dac124s085.c by Guennadi Liakhovetski <lg@denx.de>
  *
  * 	This file is subject to the terms and conditions of version 2 of
@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-#define DEBUG 
+//#define DEBUG 
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -43,16 +43,17 @@
                                                 //cycles when performing the discovery (if not set by the DT)
 #define TLC5940_SPI_MAX_SPEED			30000	// Maximum possible SPI speed for the device
 #define TLC5940_SPI_BITS_PER_WORD		8			// Word width
-#define TLC590_SPI_DELAY                0           // Spi delay in usec
+#define TLC5940_SPI_DELAY                0           // Spi delay in usec
 #define TLC5940_DEV_MAX_LEDS			16			// Maximum number of leds per device
-#define TLC5940_GS_CHANNEL_WIDTH		12			// Grayscale PWM Control resolution (bits)
-#define TLC5940_FRAME_SIZE				24			// (12 bits * 16 channels) / 8 bit
+#define TLC5940_DEVICES                 24          // Number of Devices, deactivates auto detect
+#define TLC5940_GS_CHANNEL_WIDTH		10			// Grayscale PWM Control resolution (bits)
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_GSCLK_SPEED_HZ  (10000000)
-#define TLC5940_GSCLK_PERIOD_NS (1000000000 / TLC5940_GSCLK_SPEED_HZ)
+#define TLC5940_COLORS                 16
+#define TLC5940_FRAME_SIZE			6				// (12 bits * 16 channels) / 8 bit
+#define TLC5940_RESOLUTION             1024    // Number of PWM Greyscales, max 2^12 = 4096
+#define TLC5940_GSCLK_PERIOD_NS (100) // 10 MHz GSCLK
 #define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 2)
-#define TLC5940_BLANK_PERIOD_NS (4096 * TLC5940_GSCLK_PERIOD_NS *0.98) 
-
+#define TLC5940_BLANK_PERIOD_NS (TLC5940_RESOLUTION * TLC5940_GSCLK_PERIOD_NS) 
 
 struct tlc5940_led {
     struct tlc5940_dev	*tlc;
@@ -65,7 +66,7 @@ struct tlc5940_led {
 };
 
 struct tlc5940_dev {
-    struct tlc5940_led leds[TLC5940_DEV_MAX_LEDS];		// Number of available leds per device
+    struct tlc5940_led leds[TLC5940_COLORS];		// Number of available colors
     struct spi_device	*spi;							// SPI Device handler
     struct pwm_device   *pwm;
     struct list_head	list;
@@ -90,7 +91,7 @@ static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
     hrtimer_forward_now(timer, ktime_set(0, hrtimer_delay));
     /* toggle blank pin tu reset tlc5940's GS Counter */
     gpio_set_value(tlc->blank_gpio, 1);
-    udelay(10); //1 u sec gets stable resets
+    udelay(1); //1 u sec gets stable resets
     
     gpio_set_value(tlc->blank_gpio, 0);
 
@@ -120,7 +121,7 @@ static void tlc5940_work(struct work_struct *work)
     message_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
 
     // Set delay between words
-    // tx.delay_usecs = TLC590_SPI_DELAY;
+    // tx.delay_usecs = TLC5940_SPI_DELAY;
 
     memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
     memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
@@ -141,7 +142,7 @@ static void tlc5940_work(struct work_struct *work)
         memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
         memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
 
-        for (i = 0; i < (TLC5940_DEV_MAX_LEDS >> 1); i++) {
+        for (i = 0; i < (TLC5940_COLORS >> 1); i++) {
             led_br_cur = cur_item->leds[i * 2].brightness;
             led_br_next = cur_item->leds[i * 2 + 1].brightness;
             message_tx[3 * i + 0] = (led_br_cur >> 4) & 0xff;
@@ -161,18 +162,21 @@ static void tlc5940_work(struct work_struct *work)
         for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
             printk(KERN_CONT "0x%02x ", message_tx[ret]);
         }
-        printk("rx->");
-        for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
-            printk(KERN_CONT "0x%02x ", message_rx[ret]);
-        }
+        //
+        //printk("rx->");
+        //for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
+            //printk(KERN_CONT "0x%02x ", message_rx[ret]);
+        //}
 #endif /* DEBUG */
     }
 
+    udelay(1);
     /* gpio_set_value(tlc->blank_gpio, 1); */
     gpio_set_value(tlc->xlat_gpio, 1);
     // TODO: add delay, figure out timing
     udelay(1);
     gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
+    udelay(2);
     /* gpio_set_value(tlc->blank_gpio, 0); */
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
@@ -324,9 +328,9 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
     kfree(frame_void);
 
     mutex_unlock(&dev->mlock);
-#ifdef DEBUG
-    ret = 3;
-#endif
+#ifdef TLC5940_DEVICES
+    ret = TLC5940_DEVICES;
+#endif /* TLC5940_DEVICES */
 
     return ret;
 }
@@ -512,7 +516,7 @@ static int tlc5940_probe(struct spi_device *spi)
         item->blank_gpio = tlcdev->blank_gpio;
         item->new_data = tlcdev->new_data;
 
-        for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
+        for (i = 0; i < TLC5940_COLORS; i++) {
             leddev = &item->leds[i];
             leddev->tlc = tlcdev;
             leddev->id = i;
@@ -523,7 +527,7 @@ static int tlc5940_probe(struct spi_device *spi)
             leddev->brightness = LED_OFF;
             leddev->ldev.name = leddev->name;
             leddev->ldev.brightness = LED_OFF;
-            leddev->ldev.max_brightness = 0xfff;
+            leddev->ldev.max_brightness = 0xfff; //maybe add GS resolution here, 3ff for 10bit
             spin_lock_init(&leddev->lock);
             leddev->ldev.brightness_set = tlc5940_set_brightness;
 
@@ -564,7 +568,7 @@ static int tlc5940_remove(struct spi_device *spi)
     cancel_work_sync(work);
 
     list_for_each_entry_safe(cur_node, next_node, &tlc->list, list) {
-        for (i = 0; i < TLC5940_DEV_MAX_LEDS; i++) {
+        for (i = 0; i < TLC5940_COLORS; i++) {
             led = &cur_node->leds[i];
             devm_led_classdev_unregister(dev, &led->ldev);
         }
