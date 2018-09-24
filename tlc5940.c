@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-//#define DEBUG 
+#define DEBUG 
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -34,6 +34,19 @@
 #include <linux/delay.h>
 #include <linux/pwm.h>
 
+#include <linux/kdev_t.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+#include<linux/uaccess.h>              //copy_to/from_user()
+#include<linux/sysfs.h>
+#include<linux/kobject.h>
+
+
+
+
+/*TODO some cleanup */
+
 #define DRIVER_NAME						"tlc5940"
 #define OF_MAX_CHAIN_SZ					"chain-sz-max"	// Number of connected devices from the device tree (16)
 #define OF_XLAT_GPIO					"gpio-xlat"		// Latch for loading the data into the output register (device tree)
@@ -41,17 +54,18 @@
 #define OF_PWM                          "pwms"
 #define TLC5940_DEF_MAX_CHAIN_SZ		4096    // Used to limit the number of loop
                                                 //cycles when performing the discovery (if not set by the DT)
-#define TLC5940_SPI_MAX_SPEED			30000	// Maximum possible SPI speed for the device
+/* #define TLC5940_SPI_MAX_SPEED			30000	// Maximum possible SPI speed for the device */
+/* #define TLC5940_SPI_DELAY                0           // Spi delay in usec */
+/* #define TLC5940_DEV_MAX_LEDS			16			// Maximum number of leds per device */
+/* #define TLC5940_GS_CHANNEL_WIDTH		10			// Grayscale PWM Control resolution (bits) */
 #define TLC5940_SPI_BITS_PER_WORD		8			// Word width
-#define TLC5940_SPI_DELAY                0           // Spi delay in usec
-#define TLC5940_DEV_MAX_LEDS			16			// Maximum number of leds per device
-#define TLC5940_DEVICES                 24          // Number of Devices, deactivates auto detect
-#define TLC5940_GS_CHANNEL_WIDTH		10			// Grayscale PWM Control resolution (bits)
+#define TLC5940_DEVICES                 1          // Number of Devices, deactivates auto detect
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_COLORS                 16
-#define TLC5940_FRAME_SIZE			6				// (12 bits * 16 channels) / 8 bit
+#define TLC5940_LEDS                  (4*24)
+#define TLC5940_COLORS                  4          //TODO add colors to /sys/class/leds
+#define TLC5940_FRAME_SIZE			(24*6)				//24 per chip (12 bits * 16 channels) / 8 bit
 #define TLC5940_RESOLUTION             1024    // Number of PWM Greyscales, max 2^12 = 4096
-#define TLC5940_GSCLK_PERIOD_NS (100) // 10 MHz GSCLK
+#define TLC5940_GSCLK_PERIOD_NS (50) // 10 MHz GSCLK
 #define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 2)
 #define TLC5940_BLANK_PERIOD_NS (TLC5940_RESOLUTION * TLC5940_GSCLK_PERIOD_NS) 
 
@@ -59,14 +73,14 @@ struct tlc5940_led {
     struct tlc5940_dev	*tlc;
     struct led_classdev	ldev;
     int					id;
-    int					brightness;
+    int                 brightness;
     char				name[TLC5940_LED_NAME_SZ];
 
     spinlock_t			lock;
 };
 
 struct tlc5940_dev {
-    struct tlc5940_led leds[TLC5940_COLORS];		// Number of available colors
+    struct tlc5940_led leds[TLC5940_LEDS];		// Number of available colors
     struct spi_device	*spi;							// SPI Device handler
     struct pwm_device   *pwm;
     struct list_head	list;
@@ -80,7 +94,10 @@ struct tlc5940_dev {
     int					xlat_gpio;						// Latch
     int					blank_gpio;						// Blank
     bool				new_data;
+    char                framebuffer[TLC5940_FRAME_SIZE];
 };
+
+struct kobject *kobj_ref;
 
 static unsigned long hrtimer_delay = TLC5940_BLANK_PERIOD_NS;
 
@@ -142,7 +159,7 @@ static void tlc5940_work(struct work_struct *work)
         memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
         memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
 
-        for (i = 0; i < (TLC5940_COLORS >> 1); i++) {
+        for (i = 0; i < (TLC5940_LEDS >> 1); i++) {
             led_br_cur = cur_item->leds[i * 2].brightness;
             led_br_next = cur_item->leds[i * 2 + 1].brightness;
             message_tx[3 * i + 0] = (led_br_cur >> 4) & 0xff;
@@ -175,9 +192,12 @@ static void tlc5940_work(struct work_struct *work)
     gpio_set_value(tlc->xlat_gpio, 1);
     // TODO: add delay, figure out timing
     udelay(1);
+#ifdef DEBUG
+    printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
+#endif
     gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
-    udelay(2);
     /* gpio_set_value(tlc->blank_gpio, 0); */
+    udelay(2);
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
 #endif
@@ -196,6 +216,7 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
 
     spin_lock(&led->lock);
     led->brightness = brightness;
+    led->tlc->framebuffer[0]=brightness; //TODO
     spin_unlock(&led->lock);
 
     led->tlc->new_data = 1;
@@ -266,6 +287,9 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
      * the same packet back we increase the counter until we either
      * reach max_sz or lesser value meaning that we've found all
      * devices in a chain.
+     *
+     *
+     * TODO: Fix Buffer length to 24 bit, remove from init
      */
     for (i = 0; i < max_sz; i++) {
         // Clear receive buffer
@@ -298,7 +322,7 @@ static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
                 && (i == (max_sz - 1))) {
             // We've scanned the bus, but didn't find anything
             dev_warn(&spi->dev, "no devices detected");
-            ret = 0;// (philipp) made 1 the minimum of devices
+            ret = 0;
             break;
         } else if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE)){
             // It seems that we've found something so just return ret
@@ -369,10 +393,15 @@ static int tlc5940_probe(struct spi_device *spi)
 
     mutex_init(&tlcdev->mlock);
 
-    // Set the amount of bits to be transferred at once
+    /* Create SYSFS Framebuffer */
+    kobj_ref = kobject_create_and_add("etx_sysfs",kernel_kobj); //sys/kernel/etx_sysfs
+    /* int sysfs_create_file ( struct kobject *  kobj, const struct attribute * attr); */
+
+    /* Set bits per word, shoud be 8 by default */
     spi->bits_per_word = TLC5940_SPI_BITS_PER_WORD;
 
-    // Set SPI master device transfer rate
+    /* Set SPI master device transfer rate */
+    /* TODO fails, kernel error */
     /* if (spi->max_speed_hz > TLC5940_SPI_MAX_SPEED) { */
     /*     dev_warn(dev, "spi max speed (%u) is too high, " */
     /*             "setting to default %u", tlcdev->spi->max_speed_hz, */
@@ -386,7 +415,7 @@ static int tlc5940_probe(struct spi_device *spi)
      */
     if (of_match_device(of_match_ptr(tlc5940_of_match), dev)) {
         if (!of_property_read_u32(np, OF_MAX_CHAIN_SZ, &count)) {
-            tlcdev->chain_sz = tlc5940_discover(tlcdev, spi, count);
+            tlcdev->chain_sz = TLC5940_DEVICES;//TODO discovery... tlc5940_discover(tlcdev, spi, count);
             if (!tlcdev->chain_sz) {
                 // Device is not connected at all
                 dev_err(dev, "%u device(s) found",
@@ -516,7 +545,7 @@ static int tlc5940_probe(struct spi_device *spi)
         item->blank_gpio = tlcdev->blank_gpio;
         item->new_data = tlcdev->new_data;
 
-        for (i = 0; i < TLC5940_COLORS; i++) {
+        for (i = 0; i < TLC5940_LEDS; i++) {
             leddev = &item->leds[i];
             leddev->tlc = tlcdev;
             leddev->id = i;
@@ -568,7 +597,7 @@ static int tlc5940_remove(struct spi_device *spi)
     cancel_work_sync(work);
 
     list_for_each_entry_safe(cur_node, next_node, &tlc->list, list) {
-        for (i = 0; i < TLC5940_COLORS; i++) {
+        for (i = 0; i < TLC5940_LEDS; i++) {
             led = &cur_node->leds[i];
             devm_led_classdev_unregister(dev, &led->ldev);
         }
@@ -577,6 +606,11 @@ static int tlc5940_remove(struct spi_device *spi)
         if (cur_node)
             devm_kfree(dev, cur_node);
     }
+
+    /* Remove SYSFS Framebuffer file */
+    kobject_put(kobj_ref);
+    /* void sysfs_remove_file ( struct kobject *  kobj, const struct attribute * attr); */
+
     dev_info(dev, "driver removed");
     return 0;
 }

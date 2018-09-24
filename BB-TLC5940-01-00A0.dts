@@ -30,6 +30,7 @@
         "P9.22",	/* spi0_sclk, SPI0_SCLK*/
         "P9.24",    /* blank */
         "P9.27",	/* xlat */
+        "P9.12",    /* xlat-spare */
         "P9.42",    /* pwms */
         /* the hardware ip uses */
         "gpio0_15",
@@ -55,8 +56,8 @@ bb_latch_pins: pinmux_bb_latch_pins {
                        /*	0x1x0 /* ac 0x37	 P9_25 mcasp0_ahclkx.gpio3_21,	RX_ENABLED | PULLUP | MODE7 */
                        /*	0x1a4 0x37	 P9_27 mcasp0_fsr.gpio3_19		RX_ENABLED | PULLUP | MODE7 */
                        0x184 0x17   /* P9_24 Output Pullup Mode7*/
-                       0x1a4 0x17	/* P9_27 Output Pullup Mode7*/
-
+                       /* 0x1a4 0x17	 P9_27 Output Pullup Mode7 */
+                       0x078 0x17  /* P9_12 Output Pullup Mode 7, xlat-spare */
                        >;
                };
 ecap0_pins_default: pinmux_ecap0_pins_default {
@@ -132,10 +133,11 @@ ecap2_pins_sleep: pinmux_ecap2_pins_sleep {
                 pinctrl-0 = <&bb_latch_pins>;
                 chain-sz-max = <128>;
                 gpio-blank = <&gpio0 15 1>; /* P9_24 */
-                gpio-xlat = <&gpio3 19 1>; /* P9_27 */
+                /* gpio-xlat = <&gpio3 19 1>;  P9_27  */
+                gpio-xlat = <&gpio1 28 1>; /* P9_12, xlat-spare */
                 pwms = <&ecap0 0 50000 0>; /* P9_28, name must be pwms */
                 reg = <0>;
-                spi-max-frequency = <1000000>;
+                spi-max-frequency = <10000000>;
                 spi-cpha=<1>;
                 spi-cpol=<0>;
             };
