@@ -170,7 +170,7 @@ static ssize_t dev_read(struct file *fp, char *buf, size_t len, loff_t *off)
 }
 
 /*
- * start writing from gko_buffer_start
+ * start writing 
  */
 static ssize_t dev_write(struct file *fp, const char *buf, size_t len, 
         loff_t *off)
@@ -282,9 +282,9 @@ static void tlc5940_work(struct work_struct *work)
     spi_message_init(&msg);
     tx.rx_buf = message_rx;
     tx.tx_buf = message_tx;
-    tx.len = TLC5940_FRAME_SIZE; //is documented as * 2
+    tx.len = TLC5940_FRAME_SIZE ; //is documented as * 2
 
-    spi_message_add_tail(&tx, &msg);
+    /* spi_message_add_tail(&tx, &msg); */
 
     if (mutex_lock_interruptible(&tlc->mlock)) {
         dev_err(dev, "unable to set lock");
@@ -304,11 +304,13 @@ static void tlc5940_work(struct work_struct *work)
             message_tx[3 * i + 2] = led_br_next & 0xff;
         }
 
-        ret = spi_sync(spi, &msg);
+        //ret = spi_sync(spi, &msg);
+        ret = spi_write(spi, framebuffer, TLC5940_FRAME_SIZE);
         if (ret) {
             dev_err(dev, "spi sync error");
             break;
         }
+        printk(KERN_INFO "spi sync");
 
 #ifdef DEBUG
         printk("tx->");
@@ -319,7 +321,7 @@ static void tlc5940_work(struct work_struct *work)
         //printk("rx->");
         //for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
         //printk(KERN_CONT "0x%02x ", message_rx[ret]);
-        //}
+        //
 #endif /* DEBUG */
     }
 
