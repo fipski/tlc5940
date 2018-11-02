@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-#define DEBUG 
+/* #define DEBUG */ 
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -65,7 +65,7 @@
 #define TLC5940_COLORS                  4          //TODO add colors to /sys/class/leds
 #define TLC5940_FRAME_SIZE			(24*6)				//24 per chip (12 bits * 16 channels) / 8 bit
 #define TLC5940_RESOLUTION             1024    // Number of PWM Greyscales, max 2^12 = 4096
-#define TLC5940_GSCLK_PERIOD_NS (50) // 10 MHz GSCLK
+#define TLC5940_GSCLK_PERIOD_NS (50) // 20 MHz GSCLK
 #define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 2)
 #define TLC5940_BLANK_PERIOD_NS (TLC5940_RESOLUTION * TLC5940_GSCLK_PERIOD_NS) 
 
