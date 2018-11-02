@@ -78,7 +78,7 @@ static ssize_t dev_read(struct file *fp, char *buf, size_t len, loff_t *off);
 static ssize_t dev_write(struct file *, const char *buf, size_t len, 
         loff_t *off);
 
-char                framebuffer[TLC5940_FRAME_SIZE];
+char framebuffer[TLC5940_FRAME_SIZE];
 
 struct tlc5940_led {
     struct tlc5940_dev	*tlc;
@@ -180,11 +180,15 @@ static ssize_t dev_write(struct file *fp, const char *buf, size_t len,
 
     printk(KERN_DEBUG DEVICE_NAME 
             " dev_write(fp, buf, len = %zu, off = %d )\n", len, (int)*off);
+    if (len > TLC5940_FRAME_SIZE) {
+        printk(KERN_DEBUG DEVICE_NAME " data too long!");
+        return -EFAULT;
+    }
 
-    if (len > gko_buffer_end - *off)
-        len = gko_buffer_end - *off;
+    if (len > TLC5940_FRAME_SIZE - *off)
+        len = TLC5940_FRAME_SIZE - *off;
 
-    rval = copy_from_user(gko_buffer + atomic_read(&gko_buffer_start) + *off, 
+    rval = copy_from_user(&framebuffer + *off, 
             buf,
             len);
 
@@ -348,7 +352,15 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
 
     spin_lock(&led->lock);
     led->brightness = brightness;
-    framebuffer[led->id]=brightness; //TODO
+    if (led->id % 2){
+        framebuffer[(led->id -1)*3/2 +1] &= 0xf0;
+        framebuffer[(led->id -1)*3/2 +1] |= brightness >> 8;
+        framebuffer[(led->id -1)*3/2 +2] = brightness & 0xff;
+    } else {
+        framebuffer[led->id *3/2] = brightness >> 4; //TODO
+        framebuffer[led->id *3/2 +1] &= 0x0f;
+        framebuffer[led->id *3/2 +1] |= (brightness << 4 )& 0xf0 ;
+    }
     spin_unlock(&led->lock);
 
     led->tlc->new_data = 1;
@@ -843,6 +855,6 @@ static struct spi_driver tlc5940_driver = {
 module_spi_driver(tlc5940_driver);
 
 MODULE_LICENSE("GPL v2");
-MODULE_AUTHOR("Andrei Andreyanau <a.andreyanau@sam-solutions.com>");
-MODULE_DESCRIPTION("TI TLC5940 driver");
+MODULE_AUTHOR("Philipp Sauerbrunn");
+MODULE_DESCRIPTION("video driver for tlc5940");
 MODULE_ALIAS("spi:" DRIVER_NAME);
