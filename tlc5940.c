@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-/* #define DEBUG */ 
+#define DEBUG 
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -59,9 +59,8 @@
 #define TLC5940_SPI_BITS_PER_WORD		8	   // Word width
 #define TLC5940_DEVICES                 1      // Deactivate auto detect
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_LEDS                  (4*24)
-#define TLC5940_COLORS                  4      //TODO add colors to /sys/class/leds
-#define TLC5940_FRAME_SIZE			(24*6)				//24 per chip (12b*16)/8b
+#define TLC5940_LEDS                  (48)
+#define TLC5940_FRAME_SIZE			(TLC5940_LEDS * 12 / 8)				//24 per chip (12b*16)/8b
 #define TLC5940_RESOLUTION             1024    // Number of PWM Greyscales, max 4096
 #define TLC5940_GSCLK_PERIOD_NS (50) // 20 MHz GSCLK
 #define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 2)
@@ -79,6 +78,7 @@ static ssize_t dev_read(struct file *fp, char *buf, size_t len, loff_t *off);
 static ssize_t dev_write(struct file *, const char *buf, size_t len, 
         loff_t *off);
 
+char                framebuffer[TLC5940_FRAME_SIZE];
 
 struct tlc5940_led {
     struct tlc5940_dev	*tlc;
@@ -105,7 +105,6 @@ struct tlc5940_dev {
     int					xlat_gpio;						// Latch
     int					blank_gpio;						// Blank
     bool				new_data;
-    char                framebuffer[TLC5940_FRAME_SIZE];
 };
 
 struct kobject *kobj_ref;
@@ -158,8 +157,8 @@ static ssize_t dev_read(struct file *fp, char *buf, size_t len, loff_t *off)
         len = gko_buffer_end - *off;
 
     rval = copy_to_user(buf, 
-            gko_buffer + *off,
-            len);
+            &framebuffer,
+            TLC5940_FRAME_SIZE);
 
     if (rval < 0)
         return -EFAULT;
@@ -180,8 +179,7 @@ static ssize_t dev_write(struct file *fp, const char *buf, size_t len,
     size_t copied;
 
     printk(KERN_DEBUG DEVICE_NAME 
-            " dev_write(fp, buf, len = %zu, off = %d\n", len, (int)*off);
-
+            " dev_write(fp, buf, len = %zu, off = %d )\n", len, (int)*off);
 
     if (len > gko_buffer_end - *off)
         len = gko_buffer_end - *off;
@@ -197,6 +195,7 @@ static ssize_t dev_write(struct file *fp, const char *buf, size_t len,
 
     copied = len - rval;
     *off += copied;
+    printk(KERN_DEBUG DEVICE_NAME " String read: %s", gko_buffer);
 
     return copied;
 }
@@ -349,7 +348,7 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
 
     spin_lock(&led->lock);
     led->brightness = brightness;
-    led->tlc->framebuffer[0]=brightness; //TODO
+    framebuffer[led->id]=brightness; //TODO
     spin_unlock(&led->lock);
 
     led->tlc->new_data = 1;
@@ -583,7 +582,7 @@ static int tlc5940_probe(struct spi_device *spi)
             }
             tlcdev->xlat_gpio = gpio;
 #ifdef DEBUG
-            printk(KERN_INFO "xlat pin assigned %d", gpio);
+            printk(KERN_INFO "xlat pin assigned: %d", gpio);
 #endif
         } else {
             dev_err(dev, "specified gpio pin for XLAT "
@@ -603,7 +602,7 @@ static int tlc5940_probe(struct spi_device *spi)
             }
             tlcdev->blank_gpio = gpio;
 #ifdef DEBUG
-            printk(KERN_INFO "blank pin assigned %d", gpio);
+            printk(KERN_INFO "blank pin assigned: %d", gpio);
 #endif
         } else {
             dev_err(dev, "specified gpio pin for BLANK "
