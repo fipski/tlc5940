@@ -104,9 +104,9 @@ struct tlc5940_dev {
     int					chain_sz;						// Number of devices in chain
     int					xlat_gpio;						// Latch
     int					blank_gpio;						// Blank
-    bool				new_data;
 };
 
+bool				new_data;
 struct kobject *kobj_ref;
 
 static unsigned long hrtimer_delay = TLC5940_BLANK_PERIOD_NS;
@@ -200,6 +200,8 @@ static ssize_t dev_write(struct file *fp, const char *buf, size_t len,
     copied = len - rval;
     *off += copied;
     printk(KERN_DEBUG DEVICE_NAME " String read: %s", gko_buffer);
+    
+    new_data = 1;
 
     return copied;
 }
@@ -251,7 +253,7 @@ static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
     udelay(1);
     gpio_set_value(tlc->blank_gpio, 0);
 
-    if (tlc->new_data)
+    if (new_data)
         schedule_work(&tlc->work);
 
     return HRTIMER_RESTART;
@@ -339,7 +341,7 @@ static void tlc5940_work(struct work_struct *work)
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
 #endif
-    tlc->new_data = 0;
+    new_data = 0;
 
     kfree(message_tx);
     kfree(message_rx);
@@ -365,7 +367,7 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
     }
     spin_unlock(&led->lock);
 
-    led->tlc->new_data = 1;
+    new_data = 1;
 }
 
 static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
@@ -665,7 +667,7 @@ static int tlc5940_probe(struct spi_device *spi)
     tlcdev->spi = spi;
     tlcdev->pwm = pwm;
     tlcdev->bank_id = 0;
-    tlcdev->new_data = 0;
+    new_data = 0;
     work = &tlcdev->work;
     timer = &tlcdev->timer;
 
@@ -689,7 +691,6 @@ static int tlc5940_probe(struct spi_device *spi)
         item->timer = tlcdev->timer;
         item->xlat_gpio = tlcdev->xlat_gpio;
         item->blank_gpio = tlcdev->blank_gpio;
-        item->new_data = tlcdev->new_data;
 
         for (i = 0; i < TLC5940_LEDS; i++) {
             leddev = &item->leds[i];
