@@ -12,7 +12,7 @@
  *
  * 	LED driver for the TLC5940 SPI LED Controller
  */
-#define DEBUG 
+/* #define DEBUG */ 
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/types.h>
@@ -70,6 +70,10 @@
 #define DEVICE_NAME "cdev03"            // SYSFS device name
 #define CLASS_NAME "gko_buffer"
 
+
+/* 
+ * Prototypes 
+ */
 int init_module(void);
 void cleanup_module(void);
 static int dev_open(struct inode *inode, struct file *);
@@ -78,7 +82,10 @@ static ssize_t dev_read(struct file *fp, char *buf, size_t len, loff_t *off);
 static ssize_t dev_write(struct file *, const char *buf, size_t len, 
         loff_t *off);
 
-char framebuffer[TLC5940_FRAME_SIZE];
+/*
+ * Variables 
+ */
+__u8 framebuffer[TLC5940_FRAME_SIZE];
 
 struct tlc5940_led {
     struct tlc5940_dev	*tlc;
@@ -89,6 +96,7 @@ struct tlc5940_led {
 
     spinlock_t			lock;
 };
+
 
 struct tlc5940_dev {
     struct tlc5940_led leds[TLC5940_LEDS];		// Number of available colors
@@ -106,8 +114,8 @@ struct tlc5940_dev {
     int					blank_gpio;						// Blank
 };
 
-bool				new_data;
-struct kobject *kobj_ref;
+bool    new_data;
+struct  kobject *kobj_ref;
 
 static unsigned long hrtimer_delay = TLC5940_BLANK_PERIOD_NS;
 
@@ -253,8 +261,11 @@ static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
     udelay(1);
     gpio_set_value(tlc->blank_gpio, 0);
 
-    if (new_data)
+    if (new_data){
+        new_data = 0;
+        printk(KERN_INFO " trigger work!");
         schedule_work(&tlc->work);
+    }
 
     return HRTIMER_RESTART;
 }
@@ -292,6 +303,7 @@ static void tlc5940_work(struct work_struct *work)
         dev_err(dev, "unable to set lock");
         return;
     }
+    gpio_set_value(tlc->blank_gpio, 1);
 
     list_for_each_entry_safe_reverse(cur_item, next_item, &tlc->list, list) {
         memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
@@ -327,8 +339,7 @@ static void tlc5940_work(struct work_struct *work)
 #endif /* DEBUG */
     }
 
-    udelay(1);
-    /* gpio_set_value(tlc->blank_gpio, 1); */
+    /* udelay(1); */
     gpio_set_value(tlc->xlat_gpio, 1);
     // TODO: add delay, figure out timing
     udelay(1);
@@ -337,11 +348,9 @@ static void tlc5940_work(struct work_struct *work)
 #endif
     gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
     /* gpio_set_value(tlc->blank_gpio, 0); */
-    udelay(2);
 #ifdef DEBUG
     printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
 #endif
-    new_data = 0;
 
     kfree(message_tx);
     kfree(message_rx);
