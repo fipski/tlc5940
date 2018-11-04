@@ -284,40 +284,33 @@ static void tlc5940_work(struct work_struct *work)
     struct spi_transfer tx;
     struct spi_message msg;
     u8 *message_tx;
-    u8 *message_rx;
+    /* u8 *message_rx; */
     
     int ret = 0;
 
     message_tx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
-    message_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL); 
+    /* message_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL); */ 
     
-    gpio_set_value(tlc->blank_gpio, 1);
+    gpio_set_value(tlc->blank_gpio, 1); // recommended in datasheet, causes flicker
 
-    memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
-    memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
+    memcpy(message_tx,framebuffer_tx,TLC5940_FRAME_SIZE);
     memset(&tx, 0x00, sizeof(tx));
     tx.len = TLC5940_FRAME_SIZE;
     tx.tx_buf = message_tx;
-    tx.rx_buf = message_rx;
+    /* tx.rx_buf = message_rx; */
+
     mutex_lock(&tlc->mlock);
     spi_message_init(&msg);
     spi_message_add_tail(&tx, &msg);
-    /* if (TLC5940_FRAME_SIZE > (SPI_BUFSIZ/2)) { */
-    /*     ret = spi_write(spi, framebuffer_tx, (SPI_BUFSIZ/2)); */
-    /*     if (ret) { */
-    /*         dev_err(dev, "spi sync error %d",ret); */
-    /*     } */
-    /* } else { */
-    /* if (mutex_lock_interruptible(&tlc->mlock)) { */
-    /*     dev_err(dev, "unable to set lock"); */
-    /*     return; */
-    /* } */
     ret = spi_sync(spi, &msg);
+    gpio_set_value(tlc->xlat_gpio, 1);
+    udelay(1);
+    gpio_set_value(tlc->xlat_gpio, 0);
+    gpio_set_value(tlc->blank_gpio, 0);
+
     if (ret) {
         dev_err(dev, "spi sync error %d",ret);
     }
-    /* } */
-    /* printk(KERN_INFO "spi sync"); */
 
 #ifdef DEBUG
 printk("tx->");
@@ -327,15 +320,9 @@ for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
 
 #endif /* DEBUG */
 
-    /* udelay(1); */
-    gpio_set_value(tlc->xlat_gpio, 1);
-    udelay(1);
-    gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
     spi_act = 0;
     new_data = 0;
-    gpio_set_value(tlc->blank_gpio, 0);
     kfree(message_tx);
-    kfree(message_rx);
     mutex_unlock(&tlc->mlock);
 }
 
