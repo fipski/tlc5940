@@ -44,28 +44,26 @@
 #include <linux/uaccess.h>
 
 
+/* Framebuffer limited by spi_bufsiz! Node: bufsiz = rx + tx!
+ * TODO some cleanup */
 
-
-/*TODO some cleanup */
 
 #define DRIVER_NAME						"tlc5940"
 #define OF_MAX_CHAIN_SZ					"chain-sz-max"	// Number of connected devices from the device tree (16)
 #define OF_XLAT_GPIO					"gpio-xlat"		// Latch for loading the data into the output register (device tree)
 #define OF_BLANK_GPIO					"gpio-blank"	// Blank for turning on/off all leds (device tree)
 #define OF_PWM                          "pwms"
-#define TLC5940_DEF_MAX_CHAIN_SZ		4096    // Used to limit the number of loop
 //cycles when performing the discovery (if not set by the DT)
 /* #define TLC5940_SPI_MAX_SPEED			30000	// Maximum possible SPI speed for the device */
 #define TLC5940_SPI_BITS_PER_WORD		8	   // Word width
 #define TLC5940_DEVICES                 1      // Deactivate auto detect
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_LEDS                  (48)
-#define TLC5940_FRAME_SIZE			(TLC5940_LEDS * 12 / 8)				//24 per chip (12b*16)/8b
-#define TLC5940_RESOLUTION             1024    // Number of PWM Greyscales, max 4096
-#define TLC5940_GSCLK_PERIOD_NS (50) // 20 MHz GSCLK
-#define TLC5940_GSCLK_DUTY_CYCLE_NS (TLC5940_GSCLK_PERIOD_NS / 2)
-#define TLC5940_BLANK_PERIOD_NS (TLC5940_RESOLUTION * TLC5940_GSCLK_PERIOD_NS) 
-
+#define TLC5940_LEDS                    (2*48)
+#define TLC5940_FRAME_SIZE	    	  	(TLC5940_LEDS * 3 / 2)	//24 per chip (12b*16)/8b
+#define TLC5940_RESOLUTION              1024  // Number of PWM Greyscales, max 4096
+#define TLC5940_GSCLK_PERIOD_NS         (50)  // 20 MHz GSCLK
+#define TLC5940_GSCLK_DUTY_CYCLE_NS     (TLC5940_GSCLK_PERIOD_NS / 2)
+#define TLC5940_BLANK_PERIOD_NS         (TLC5940_RESOLUTION * TLC5940_GSCLK_PERIOD_NS) 
 
 #define DEVICE_NAME "cdev03"            // SYSFS device name
 #define CLASS_NAME "gko_buffer"
@@ -85,7 +83,8 @@ static ssize_t dev_write(struct file *, const char *buf, size_t len,
 /*
  * Variables 
  */
-__u8 framebuffer[TLC5940_FRAME_SIZE];
+__u8 framebuffer_tx[TLC5940_FRAME_SIZE];
+__u8 framebuffer_rx[TLC5940_FRAME_SIZE];
 
 struct tlc5940_led {
     struct tlc5940_dev	*tlc;
@@ -115,6 +114,7 @@ struct tlc5940_dev {
 };
 
 bool    new_data;
+bool    spi_act;
 struct  kobject *kobj_ref;
 
 static unsigned long hrtimer_delay = TLC5940_BLANK_PERIOD_NS;
@@ -165,7 +165,7 @@ static ssize_t dev_read(struct file *fp, char *buf, size_t len, loff_t *off)
         len = gko_buffer_end - *off;
 
     rval = copy_to_user(buf, 
-            &framebuffer,
+            &framebuffer_tx,
             TLC5940_FRAME_SIZE);
 
     if (rval < 0)
@@ -196,7 +196,7 @@ static ssize_t dev_write(struct file *fp, const char *buf, size_t len,
     if (len > TLC5940_FRAME_SIZE - *off)
         len = TLC5940_FRAME_SIZE - *off;
 
-    rval = copy_from_user(&framebuffer + *off, 
+    rval = copy_from_user(&framebuffer_tx + *off, 
             buf,
             len);
 
@@ -255,17 +255,19 @@ static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
     struct tlc5940_dev *tlc = container_of(timer, struct tlc5940_dev, timer);
 
     hrtimer_forward_now(timer, ktime_set(0, hrtimer_delay));
+    if (new_data){
+        if (!spi_act){
+            spi_act = 1;
+            schedule_work(&tlc->work);
+        } else {
+            return HRTIMER_RESTART;
+        }
+    }
     /* toggle blank pin tu reset tlc5940's GS Counter */
     gpio_set_value(tlc->blank_gpio, 1);
     /* 1 u sec gets stable resets */
     udelay(1);
     gpio_set_value(tlc->blank_gpio, 0);
-
-    if (new_data){
-        new_data = 0;
-        printk(KERN_INFO " trigger work!");
-        schedule_work(&tlc->work);
-    }
 
     return HRTIMER_RESTART;
 }
@@ -275,87 +277,51 @@ static void tlc5940_work(struct work_struct *work)
     struct tlc5940_dev *tlc = container_of(work, struct tlc5940_dev, work);
     struct spi_device *spi = tlc->spi;
     struct device *dev = &spi->dev;
-    struct tlc5940_dev *cur_item;
-    struct tlc5940_dev *next_item;
     struct spi_transfer tx;
     struct spi_message msg;
-    __u8 *message_tx;
-    __u8 *message_rx;
-    int led_br_cur = 0;
-    int led_br_next = 0;
     int ret = 0;
-    int i = 0;
 
-    message_tx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
-    message_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
+    gpio_set_value(tlc->blank_gpio, 1);
 
-    memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
-    memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
     memset(&tx, 0x00, sizeof(tx));
     spi_message_init(&msg);
-    tx.rx_buf = message_rx;
-    tx.tx_buf = message_tx;
-    tx.len = TLC5940_FRAME_SIZE ; //is documented as * 2
-
-    /* spi_message_add_tail(&tx, &msg); */
-
+    tx.rx_buf = framebuffer_rx;
+    tx.tx_buf = framebuffer_tx;
+    tx.len = TLC5940_FRAME_SIZE;
+    spi_message_add_tail(&tx, &msg);
+    /* if (TLC5940_FRAME_SIZE > (SPI_BUFSIZ/2)) { */
+    /*     ret = spi_write(spi, framebuffer_tx, (SPI_BUFSIZ/2)); */
+    /*     if (ret) { */
+    /*         dev_err(dev, "spi sync error %d",ret); */
+    /*     } */
+    /* } else { */
     if (mutex_lock_interruptible(&tlc->mlock)) {
         dev_err(dev, "unable to set lock");
         return;
     }
-    gpio_set_value(tlc->blank_gpio, 1);
-
-    list_for_each_entry_safe_reverse(cur_item, next_item, &tlc->list, list) {
-        memset(message_tx, 0x00, TLC5940_FRAME_SIZE);
-        memset(message_rx, 0x00, TLC5940_FRAME_SIZE);
-
-        for (i = 0; i < (TLC5940_LEDS >> 1); i++) {
-            led_br_cur = cur_item->leds[i * 2].brightness;
-            led_br_next = cur_item->leds[i * 2 + 1].brightness;
-            message_tx[3 * i + 0] = (led_br_cur >> 4) & 0xff;
-            message_tx[3 * i + 1] =
-                ((led_br_cur & 0x0f) << 4) + ((led_br_next >> 8) & 0x0f);
-            message_tx[3 * i + 2] = led_br_next & 0xff;
-        }
-
-        //ret = spi_sync(spi, &msg);
-        ret = spi_write(spi, framebuffer, TLC5940_FRAME_SIZE);
-        if (ret) {
-            dev_err(dev, "spi sync error");
-            break;
-        }
-        printk(KERN_INFO "spi sync");
+    ret = spi_sync(spi, &msg);
+    if (ret) {
+        dev_err(dev, "spi sync error %d",ret);
+    }
+    /* } */
+    /* printk(KERN_INFO "spi sync"); */
 
 #ifdef DEBUG
-        printk("tx->");
-        for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
-            printk(KERN_CONT "0x%02x ", message_tx[ret]);
-        }
+printk("tx->");
+for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
+    printk(KERN_CONT "0x%02x ", framebuffer_tx[ret]);
+}
 
-        //printk("rx->");
-        //for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
-        //printk(KERN_CONT "0x%02x ", message_rx[ret]);
-        //
 #endif /* DEBUG */
-    }
 
     /* udelay(1); */
     gpio_set_value(tlc->xlat_gpio, 1);
-    // TODO: add delay, figure out timing
     udelay(1);
-#ifdef DEBUG
-    printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
-#endif
     gpio_set_value(tlc->xlat_gpio, 0); // (philipp), debug
-    /* gpio_set_value(tlc->blank_gpio, 0); */
-#ifdef DEBUG
-    printk(KERN_INFO "xlat_gpio is %x \n", gpio_get_value(tlc->xlat_gpio));
-#endif
-
-    kfree(message_tx);
-    kfree(message_rx);
-
     mutex_unlock(&tlc->mlock);
+    spi_act = 0;
+    new_data = 0;
+    gpio_set_value(tlc->blank_gpio, 0);
 }
 
 static void tlc5940_set_brightness(struct led_classdev *ldev,
@@ -366,154 +332,17 @@ static void tlc5940_set_brightness(struct led_classdev *ldev,
     spin_lock(&led->lock);
     led->brightness = brightness;
     if (led->id % 2){
-        framebuffer[(led->id -1)*3/2 +1] &= 0xf0;
-        framebuffer[(led->id -1)*3/2 +1] |= brightness >> 8;
-        framebuffer[(led->id -1)*3/2 +2] = brightness & 0xff;
+        framebuffer_tx[(led->id -1)*3/2 +1] &= 0xf0;
+        framebuffer_tx[(led->id -1)*3/2 +1] |= brightness >> 8;
+        framebuffer_tx[(led->id -1)*3/2 +2] = brightness & 0xff;
     } else {
-        framebuffer[led->id *3/2] = brightness >> 4; //TODO
-        framebuffer[led->id *3/2 +1] &= 0x0f;
-        framebuffer[led->id *3/2 +1] |= (brightness << 4 )& 0xf0 ;
+        framebuffer_tx[led->id *3/2] = brightness >> 4; //TODO
+        framebuffer_tx[led->id *3/2 +1] &= 0x0f;
+        framebuffer_tx[led->id *3/2 +1] |= (brightness << 4) & 0xf0 ;
     }
     spin_unlock(&led->lock);
 
     new_data = 1;
-}
-
-static int tlc5940_discover(struct tlc5940_dev *dev, struct spi_device *spi,
-        int max_sz)
-{
-    struct spi_transfer tx;
-    struct spi_message msg;
-
-    int ret = 0;
-    int i = 0;
-
-#ifdef DEBUG
-    int k = 0;
-#endif /* DEBUG */
-
-    __u8 *frame_tx;
-    __u8 *frame_rx;
-    __u8 *frame_void;
-
-    if (mutex_lock_interruptible(&dev->mlock)) {
-        return 0;
-    }
-
-    frame_tx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
-    frame_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
-    frame_void = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
-
-    // Fill TX frame with 0xAA mask
-    memset(frame_tx, 0xAA, TLC5940_FRAME_SIZE);
-    // Clear RX frame
-    memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
-    // Fill empty frame with 0xFF mask
-    memset(frame_void, 0xFE, TLC5940_FRAME_SIZE);
-
-    // Send void to fill register
-    memset(&tx, 0x00, sizeof(tx));
-    spi_message_init(&msg);
-    tx.rx_buf = frame_void;
-    tx.tx_buf = frame_void;
-    tx.len = TLC5940_FRAME_SIZE;
-
-    spi_message_add_tail(&tx, &msg);
-    memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
-    ret = spi_sync(spi, &msg);
-    if (ret) {
-        ret = 0;
-        dev_err(&spi->dev, "spi sync error");
-    }
-
-
-    memset(&tx, 0x00, sizeof(tx));
-    spi_message_init(&msg);
-    tx.rx_buf = frame_rx;
-    tx.tx_buf = frame_tx;
-    tx.len = TLC5940_FRAME_SIZE ;// (philipp * 2)
-    spi_message_add_tail(&tx, &msg);
-
-    /*
-     * Send a packet to the device and read its response.
-     * How it works. After sending a packet and not receiving it
-     * within the range of 0 .. max_sz - it means that there are
-     * no TLC5940s' at all, so we return 0. Otherwise we increase
-     * the counter until we receive the packet back within the
-     * range of 0 .. max_sz. After sending each packet and not receiving
-     * the same packet back we increase the counter until we either
-     * reach max_sz or lesser value meaning that we've found all
-     * devices in a chain.
-     *
-     *
-     * TODO: Fix Buffer length to 24 bit, remove from init
-     */
-    for (i = 0; i < max_sz; i++) {
-        // Clear receive buffer
-        memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
-        // Start synced SPI ops
-        if (spi_sync(spi, &msg)) {
-            ret = 0;
-            dev_err(&spi->dev, "spi sync error");
-            break;
-        }
-
-#ifdef DEBUG
-        printk(KERN_INFO "frame %d \n", i);
-        printk("tx->");
-        for (k = 0; k < TLC5940_FRAME_SIZE; k++) {
-            printk(KERN_CONT "0x%02x ", frame_tx[k]);
-        }
-        printk("rx->");
-        for (k = 0; k < TLC5940_FRAME_SIZE; k++) {
-            printk(KERN_CONT "0x%02x ", frame_rx[k]);
-        }
-#endif /* DEBUG */
-        // Compare buffers
-        if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE) && (i == 0)) {
-            ret = 0;
-            // Looks like it's a close loop -> no devices connected
-            dev_warn(&spi->dev, "close loop detected");
-            break;
-        } else if (!strncmp(frame_rx, frame_void, TLC5940_FRAME_SIZE)
-                && (i == (max_sz - 1))) {
-            // We've scanned the bus, but didn't find anything
-            dev_warn(&spi->dev, "no devices detected");
-            ret = 0;
-            break;
-        } else if (!strncmp(frame_rx, frame_tx, TLC5940_FRAME_SIZE)){
-            // It seems that we've found something so just return ret
-            printk(KERN_INFO "found match in frame %x \n", i);
-            ret = i; 
-            break;
-        } else {
-            ret++;
-        }
-    }
-
-    memset(&tx, 0x00, sizeof(tx));
-    spi_message_init(&msg);
-    tx.rx_buf = frame_rx;
-    tx.tx_buf = frame_rx;
-    tx.len = TLC5940_FRAME_SIZE;
-
-    spi_message_add_tail(&tx, &msg);
-    memset(frame_rx, 0x00, TLC5940_FRAME_SIZE);
-
-    if (spi_sync(spi, &msg)) {
-        dev_err(&spi->dev, "spi sync error");
-    }
-
-    kfree(frame_tx);
-    kfree(frame_rx);
-    kfree(frame_void);
-
-    mutex_unlock(&dev->mlock);
-#ifdef TLC5940_DEVICES
-    ret = TLC5940_DEVICES;
-#endif /* TLC5940_DEVICES */
-
-    return ret;
 }
 
 static const struct of_device_id tlc5940_of_match[] = {
@@ -550,9 +379,6 @@ static int tlc5940_probe(struct spi_device *spi)
 
     mutex_init(&tlcdev->mlock);
 
-    /* Create SYSFS Framebuffer */
-    /* kobj_ref = kobject_create_and_add("etx_sysfs",kernel_kobj); //sys/kernel/etx_sysfs */
-    /* int sysfs_create_file ( struct kobject *  kobj, const struct attribute * attr); */
 
     /* Set bits per word, shoud be 8 by default */
     spi->bits_per_word = TLC5940_SPI_BITS_PER_WORD;
@@ -572,28 +398,19 @@ static int tlc5940_probe(struct spi_device *spi)
      */
     if (of_match_device(of_match_ptr(tlc5940_of_match), dev)) {
         if (!of_property_read_u32(np, OF_MAX_CHAIN_SZ, &count)) {
-            tlcdev->chain_sz = TLC5940_DEVICES;//TODO discovery... tlc5940_discover(tlcdev, spi, count);
+            tlcdev->chain_sz = TLC5940_DEVICES;
             if (!tlcdev->chain_sz) {
                 // Device is not connected at all
-                dev_err(dev, "%u device(s) found",
+                dev_err(dev, "%u device(s)",
                         tlcdev->chain_sz);
                 return -ENODEV;
             } else {
-                dev_info(dev, "found %u device(s)",
+                dev_info(dev, "configured %u device(s)",
                         tlcdev->chain_sz);
             }
         }
     } else {
-        count = tlc5940_discover(tlcdev, spi, TLC5940_DEF_MAX_CHAIN_SZ);
-        if (count > 0) {
-            tlcdev->chain_sz = count;
-            dev_info(dev, "found %u device(s) in a chain",
-                    tlcdev->chain_sz);
-        } else {
-            // Device is not connected at all
-            dev_err(dev, "%u device(s) found", count);
             return -ENODEV;
-        }
     }
 
     // Get XLAT pin
@@ -677,6 +494,7 @@ static int tlc5940_probe(struct spi_device *spi)
     tlcdev->pwm = pwm;
     tlcdev->bank_id = 0;
     new_data = 0;
+    spi_act = 0;
     work = &tlcdev->work;
     timer = &tlcdev->timer;
 
