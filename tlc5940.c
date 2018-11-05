@@ -65,8 +65,8 @@
 #define TLC5940_GSCLK_DUTY_CYCLE_NS     (TLC5940_GSCLK_PERIOD_NS / 2)
 #define TLC5940_BLANK_PERIOD_NS         (TLC5940_RESOLUTION * TLC5940_GSCLK_PERIOD_NS) 
 
-#define DEVICE_NAME "cdev03"            // SYSFS device name
-#define CLASS_NAME "gko_buffer"
+#define DEVICE_NAME "fbuf"            // SYSFS device name
+#define CLASS_NAME "tlc_framebuffer"
 
 
 /* 
@@ -85,11 +85,9 @@ static ssize_t dev_write(struct file *, const char *buf, size_t len,
  */
 
 bool    new_data;
-bool    spi_act;
+bool    latching;
 struct  kobject *kobj_ref;
 u8 framebuffer_tx[TLC5940_FRAME_SIZE];
-u8 framebuffer_rx[TLC5940_FRAME_SIZE];
-u8 foo[8];
 
 struct tlc5940_led {
     struct tlc5940_dev	*tlc;
@@ -260,13 +258,12 @@ static enum hrtimer_restart tlc5940_timer(struct hrtimer *timer)
 
     hrtimer_forward_now(timer, ktime_set(0, hrtimer_delay));
     if (new_data){
-        if (!spi_act){
-            spi_act = 1;
-            schedule_work(&tlc->work);
-        } else {
-            return HRTIMER_RESTART;
-        }
+        new_data = 0;
+        schedule_work(&tlc->work);
     }
+    if (latching)
+        return HRTIMER_RESTART;
+
     /* toggle blank pin tu reset tlc5940's GS Counter */
     gpio_set_value(tlc->blank_gpio, 1);
     /* 1 u sec gets stable resets */
@@ -291,7 +288,6 @@ static void tlc5940_work(struct work_struct *work)
     message_tx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL);
     /* message_rx = kmalloc(TLC5940_FRAME_SIZE, GFP_KERNEL); */ 
     
-    gpio_set_value(tlc->blank_gpio, 1); // recommended in datasheet, causes flicker
 
     memcpy(message_tx,framebuffer_tx,TLC5940_FRAME_SIZE);
     memset(&tx, 0x00, sizeof(tx));
@@ -303,6 +299,7 @@ static void tlc5940_work(struct work_struct *work)
     spi_message_init(&msg);
     spi_message_add_tail(&tx, &msg);
     ret = spi_sync(spi, &msg);
+    gpio_set_value(tlc->blank_gpio, 1); // recommended in datasheet, causes flicker
     gpio_set_value(tlc->xlat_gpio, 1);
     udelay(1);
     gpio_set_value(tlc->xlat_gpio, 0);
@@ -320,8 +317,6 @@ for (ret = 0; ret < TLC5940_FRAME_SIZE; ret++) {
 
 #endif /* DEBUG */
 
-    spi_act = 0;
-    new_data = 0;
     kfree(message_tx);
     mutex_unlock(&tlc->mlock);
 }
@@ -376,7 +371,6 @@ static int tlc5940_probe(struct spi_device *spi)
     }
 
     memset(framebuffer_tx, 0x00, TLC5940_FRAME_SIZE);
-    memset(framebuffer_rx, 0x00, TLC5940_FRAME_SIZE);
     tlcdev = devm_kzalloc(dev, sizeof(struct tlc5940_dev), GFP_KERNEL);
     if (!tlcdev)
         return -ENOMEM;
@@ -498,7 +492,6 @@ static int tlc5940_probe(struct spi_device *spi)
     tlcdev->pwm = pwm;
     tlcdev->bank_id = 0;
     new_data = 0;
-    spi_act = 0;
     work = &tlcdev->work;
     timer = &tlcdev->timer;
 
