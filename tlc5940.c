@@ -58,7 +58,7 @@
 #define TLC5940_SPI_BITS_PER_WORD		8	   // Word width
 #define TLC5940_DEVICES                 1      // Deactivate auto detect
 #define TLC5940_LED_NAME_SZ				16
-#define TLC5940_LEDS                    (2*48)
+#define TLC5940_LEDS                    (10*48)
 #define TLC5940_FRAME_SIZE	    	  	(TLC5940_LEDS * 3 / 2)	//24 per chip (12b*16)/8b
 #define TLC5940_RESOLUTION              1024  // Number of PWM Greyscales, max 4096
 #define TLC5940_GSCLK_PERIOD_NS         (50)  // 20 MHz GSCLK
@@ -147,10 +147,13 @@ static int dev_open(struct inode *inode, struct file *fp)
     int old;
     old = atomic_cmpxchg(&atomic, 0, 1);
     if (old == 0) {
+#ifdef DEBUG
         printk("Succes: first open\n");
-
+#endif /* DEBUG */
     } else {
+#ifdef DEBUG
         printk("Failed: already opened\n");
+#endif /* DEBUG */
         return -EBUSY;
     }
 
@@ -165,11 +168,13 @@ static int dev_open(struct inode *inode, struct file *fp)
 static int dev_release(struct inode *inode, struct file *fp)
 {
     int old;
-
+#ifdef DEBUG
     printk("cdev_release\n");
-
+#endif /* DEBUG */
     old = atomic_cmpxchg(&atomic, 1, 0);
+#ifdef DEBUG
     printk("Release: old = %d\n", old);
+#endif /* DEBUG */
     return 0;
 }
 
@@ -204,9 +209,10 @@ static ssize_t dev_write(struct file *fp, const char *buf, size_t len,
         loff_t *off)
 {
     unsigned long rval;
-
+#ifdef DEBUG
     printk(KERN_DEBUG DEVICE_NAME 
             " dev_write(fp, buf, len = %zu, off = %d )\n", len, (int)*off);
+#endif /* DEBUG */
     /* if (len > TLC5940_FRAME_SIZE) { */
     /*     printk(KERN_DEBUG DEVICE_NAME " data too long!"); */
     /*     return -1; */
@@ -226,8 +232,10 @@ static ssize_t dev_write(struct file *fp, const char *buf, size_t len,
 
 
     *off += TLC5940_FRAME_SIZE;
+#ifdef DEBUG
     printk(KERN_DEBUG DEVICE_NAME " String read: %s", gko_buffer);
-    
+#endif /* DEBUG */
+
     new_data = 1;
 
     return TLC5940_FRAME_SIZE;
