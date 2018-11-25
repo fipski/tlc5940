@@ -1,16 +1,10 @@
 #!/usr/bin/python3
 
 import math
-from math import pi as pi
 import time
 
-ledStart = 47
-# ledStart = 0
-ledEnd = 96
 px = 10*48
 
-frame = []
-framebuffer = []
 
 class FrameBuffer:
     """Access the tlc5940.ko Framebuffer"""
@@ -37,23 +31,31 @@ class FrameBuffer:
 
 fb = FrameBuffer(px)
 fb.write()
+for i in range(px):
+    if i % 4 == 2:
+        fb.frame[i] = 4095
+    else:
+        fb.frame[i] = 0
 
-while(True):
-    for i in range(0,201):
-        for px in range(0,fb.px,4):
-            fb.frame[px+1] = int(500*((1+math.sin(math.pi*i/100+2*pi*px/480+0)))**2)
-            # fb.frame[px+2] = int(500*(1+math.sin(math.pi*i/100+1*pi/3*px/120+math.pi/3)))
-            # fb.frame[px+3] = int(500*(1+math.sin(math.pi*i/100+2*pi/3*px/120+math.pi*2/3)))
-        fb.write()
-        time.sleep(0.01)
-    for i in range(0,201):
-        for px in range(0,fb.px,4):
-            fb.frame[px+1] = int(500*((1+math.sin(math.pi*i/100+2*pi*px/480+0)))**2)
-            fb.frame[px+2] = int(500*((1+math.sin(math.pi*i/100+2*pi*px/480+0)))**2)
-            # fb.frame[px+2] = int(500*(1+math.sin(math.pi*i/100+1*pi/3*px/120+math.pi/3)))
-            # fb.frame[px+3] = int(500*(1+math.sin(math.pi*i/100+2*pi/3*px/120+math.pi*2/3)))
-        fb.write()
-        time.sleep(0.01)
+fb.frame[58*4] = 0
+fb.write()
+# for c in range(4):
+#     for i in range(px):
+#         if i % 4 == c:
+#             fb.frame[i] = 4095
+#         else:
+#             fb.frame[i] = 0
+#         fb.write()
+#         time.sleep(0.01)
+
+# while(True):
+#     for i in range(0,2001):
+#         for px in range(0,fb.px,4):
+#             fb.frame[px+1] = int(2000*(1+math.sin(10.0*math.pi*i/1000+0.1*px+0)))
+#             fb.frame[px+2] = int(2000*(1+math.sin(10.0*math.pi*i/1000+0.1*px+math.pi/3)))
+#             fb.frame[px+3] = int(2000*(1+math.sin(10.0*math.pi*i/1000+0.1*px+math.pi*2/3)))
+#         fb.write()
+#         time.sleep(0.01)
 
 
 # for i in range(px):
