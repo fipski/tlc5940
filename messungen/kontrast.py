@@ -32,8 +32,10 @@ class FrameBuffer:
 fb = FrameBuffer(px)
 fb.write()
 for i in range(px):
-    if i % 4 == 2:
+    if i % 4 == 0:
         fb.frame[i] = 4095
+    # if i % 3 == 1:
+        # fb.frame[i] = 4095
     else:
         fb.frame[i] = 0
 
