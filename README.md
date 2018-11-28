@@ -1,4 +1,4 @@
-# Project Title
+# TLC5940
 
 Control Texas Instruments TLC5940 LED Drivers with a Beaglebone Black.
 
