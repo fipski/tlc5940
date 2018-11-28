@@ -26,10 +26,6 @@ dtb_overlay=/lib/firmware/BB-TLC5940-01-00A0.dtbo
 
 to compile install linux-headers$(uname -r)
 
-```
-Give examples
-```
-
 ### Installing
 
 probe the module with
