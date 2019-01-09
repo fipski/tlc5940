@@ -24,7 +24,7 @@ dtb_overlay=/lib/firmware/BB-TLC5940-01-00A0.dtbo
 
 ### Prerequisites
 
-to compile install linux-headers$(uname -r)
+to compile uncomment kernel sources in /etc/apt/sources.list and install linux-headers$(uname -r)
 
 ### Installing
 
