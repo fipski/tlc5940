@@ -1,0 +1,11 @@
+[Unit]
+Description=Setup tlc5940 led control
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tlcsetup.sh start
+ExecStop=/usr/bin/tlcsetup.sh stop
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
