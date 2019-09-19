@@ -38,4 +38,11 @@ Write brighness values as 12bit binary data. Data will be sent on file close. Th
 
 ## TODO
 
+### PRU
+
 Each dimming cycle is ended by a BLANK signal. At the moment Blank is created by a hrtimer in software, so it has a lot of jitter. The brightness control should be done by the PRU coprocessor.
+
+### Git
+
+rebase, cleanup, python scripts and demo files to different repo. make git public.
+
